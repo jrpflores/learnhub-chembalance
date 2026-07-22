@@ -1,0 +1,18 @@
+ARG NODE_IMAGE=node:20-slim
+FROM ${NODE_IMAGE}
+
+WORKDIR /app
+
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ENV DATABASE_FILE=/app/data/learnhub.db
+ENV UPLOADS_DIR=/app/storage/uploads
+ENV LOGS_DIR=/app/storage/logs
+ENV AI_MODELS_DIR=/app/storage/models
+
+CMD ["npm", "run", "worker"]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LearnHub Feature Implementer"
+  short_description: "Build LearnHub features with safe end-to-end workflow"
+  default_prompt: "Use $learnhub-feature-implementer to scan LearnHub, produce an implementation plan, and ship complete, validated code changes."

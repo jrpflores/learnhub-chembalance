@@ -1,0 +1,179 @@
+# Set COMPOSE_PROJECT_NAME (shell or .env) to control container/network/volume prefix.
+services:
+  db:
+    image: ${CHEMBALANCE_DB_IMAGE:-alpine:3.20}
+    command: ["sh", "-c", "mkdir -p /var/lib/learnhub && touch /var/lib/learnhub/.ready && tail -f /dev/null"]
+    volumes:
+      - db-data:/var/lib/learnhub
+    healthcheck:
+      test: ["CMD", "test", "-f", "/var/lib/learnhub/.ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - learnhub-internal
+    restart: unless-stopped
+
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    volumes:
+      - ai-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    ports:
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
+    networks:
+      - learnhub-internal
+    restart: unless-stopped
+
+  offline-grader:
+    image: ${CHEMBALANCE_OFFLINE_GRADER_IMAGE:-learnhub/offline-grader:local}
+    environment:
+      MODEL_DIR: /models
+      GRADER_PROVIDER: ${GRADER_PROVIDER:-auto}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3:8b}
+      OLLAMA_FALLBACK_MODELS: ${OLLAMA_FALLBACK_MODELS:-}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-240000}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.1}
+      AI_CONFIDENCE_MEDIUM: ${AI_CONFIDENCE_MEDIUM:-0.7}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ai-models:/models
+      - logs-data:/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).read()",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    ports:
+      - "${OFFLINE_GRADER_HOST_PORT:-8001}:8001"
+    networks:
+      - learnhub-internal
+    restart: unless-stopped
+
+  lms:
+    image: ${CHEMBALANCE_LMS_IMAGE:-learnhub/lms:local}
+    environment:
+      HOSTNAME: 0.0.0.0
+      DATABASE_FILE: /app/data/learnhub.db
+      UPLOADS_DIR: /app/storage/uploads
+      LOGS_DIR: /app/storage/logs
+      AI_MODELS_DIR: /app/storage/models
+      JWT_SECRET: ${JWT_SECRET:-dev-change-this-to-a-long-random-secret}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-learnhub_session}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      OFFLINE_GRADER_URL: ${OFFLINE_GRADER_URL:-http://offline-grader:8001}
+      OFFLINE_GRADER_TIMEOUT_MS: ${OFFLINE_GRADER_TIMEOUT_MS:-5000}
+      OFFLINE_AI_ENABLED: ${OFFLINE_AI_ENABLED:-true}
+      AI_GRADING_MODE: ${AI_GRADING_MODE:-sync}
+      AI_FALLBACK_BEHAVIOR: ${AI_FALLBACK_BEHAVIOR:-manual_review}
+      AI_CONFIDENCE_HIGH: ${AI_CONFIDENCE_HIGH:-0.9}
+      AI_CONFIDENCE_MEDIUM: ${AI_CONFIDENCE_MEDIUM:-0.7}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3:8b}
+      OLLAMA_FALLBACK_MODELS: ${OLLAMA_FALLBACK_MODELS:-}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-240000}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.1}
+      AI_TUTOR_QUESTION_CHAR_LIMIT: ${AI_TUTOR_QUESTION_CHAR_LIMIT:-1200}
+      AI_TUTOR_HISTORY_WINDOW: ${AI_TUTOR_HISTORY_WINDOW:-6}
+      AI_TUTOR_HISTORY_CHARS: ${AI_TUTOR_HISTORY_CHARS:-320}
+      AI_TUTOR_LESSON_CHUNK_CHARS: ${AI_TUTOR_LESSON_CHUNK_CHARS:-680}
+      AI_TUTOR_LESSON_MAX_CHUNKS: ${AI_TUTOR_LESSON_MAX_CHUNKS:-4}
+      AI_TUTOR_LESSON_MAX_CONTEXT_CHARS: ${AI_TUTOR_LESSON_MAX_CONTEXT_CHARS:-3200}
+      AI_QUIZ_GEN_LESSON_CHUNK_CHARS: ${AI_QUIZ_GEN_LESSON_CHUNK_CHARS:-800}
+      AI_QUIZ_GEN_MAX_CHUNKS: ${AI_QUIZ_GEN_MAX_CHUNKS:-5}
+      AI_QUIZ_GEN_MAX_CONTEXT_CHARS: ${AI_QUIZ_GEN_MAX_CONTEXT_CHARS:-4500}
+      LOGIN_SHARE_URL: ${LOGIN_SHARE_URL:-}
+      LOGIN_SHARE_URLS: ${LOGIN_SHARE_URLS:-}
+      LEARNHUB_AUTO_SEED: ${LEARNHUB_AUTO_SEED:-true}
+      TMPDIR: /app/storage/logs/tmp
+    depends_on:
+      db:
+        condition: service_healthy
+      offline-grader:
+        condition: service_healthy
+    volumes:
+      - db-data:/app/data
+      - uploads-data:/app/storage/uploads
+      - logs-data:/app/storage/logs
+      - ai-models:/app/storage/models
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 35s
+    ports:
+      - "${LMS_HOST_PORT:-3000}:3000"
+    networks:
+      - learnhub-internal
+    restart: unless-stopped
+
+  worker:
+    image: ${CHEMBALANCE_WORKER_IMAGE:-learnhub/lms-ops:local}
+    command: ["sh", "-c", "mkdir -p /app/storage/logs/tmp && npm run worker"]
+    environment:
+      DATABASE_FILE: /app/data/learnhub.db
+      OFFLINE_GRADER_URL: ${OFFLINE_GRADER_URL:-http://offline-grader:8001}
+      OFFLINE_GRADER_TIMEOUT_MS: ${OFFLINE_GRADER_TIMEOUT_MS:-5000}
+      OFFLINE_AI_ENABLED: ${OFFLINE_AI_ENABLED:-true}
+      AI_CONFIDENCE_MEDIUM: ${AI_CONFIDENCE_MEDIUM:-0.7}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3:8b}
+      OLLAMA_FALLBACK_MODELS: ${OLLAMA_FALLBACK_MODELS:-}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-240000}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.1}
+      AI_QUIZ_GEN_LESSON_CHUNK_CHARS: ${AI_QUIZ_GEN_LESSON_CHUNK_CHARS:-800}
+      AI_QUIZ_GEN_MAX_CHUNKS: ${AI_QUIZ_GEN_MAX_CHUNKS:-5}
+      AI_QUIZ_GEN_MAX_CONTEXT_CHARS: ${AI_QUIZ_GEN_MAX_CONTEXT_CHARS:-4500}
+      TMPDIR: /app/storage/logs/tmp
+    depends_on:
+      db:
+        condition: service_healthy
+      offline-grader:
+        condition: service_healthy
+    volumes:
+      - db-data:/app/data
+      - logs-data:/app/storage/logs
+      - ai-models:/app/storage/models
+    tmpfs:
+      - /tmp
+    networks:
+      - learnhub-internal
+    restart: unless-stopped
+
+networks:
+  learnhub-internal:
+    driver: bridge
+
+volumes:
+  db-data:
+    name: ${COMPOSE_PROJECT_NAME:-learnhub}_db-data
+  uploads-data:
+    name: ${COMPOSE_PROJECT_NAME:-learnhub}_uploads-data
+  logs-data:
+    name: ${COMPOSE_PROJECT_NAME:-learnhub}_logs-data
+  ai-models:
+    name: ${COMPOSE_PROJECT_NAME:-learnhub}_ai-models
