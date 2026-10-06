@@ -48,10 +48,15 @@ export const env = {
   aiHighConfidenceThreshold: toNumber(process.env.AI_CONFIDENCE_HIGH, 0.9),
   aiMediumConfidenceThreshold: toNumber(process.env.AI_CONFIDENCE_MEDIUM, 0.7),
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
-  ollamaModel: normalizeModelName(process.env.OLLAMA_MODEL) || "llama3:8b",
+  /** Default lite offline model (3B class) for CPU-friendly quiz/lesson/tutor workloads. */
+  ollamaModel: normalizeModelName(process.env.OLLAMA_MODEL) || "qwen2.5:3b",
   ollamaFallbackModels: parseModelList(process.env.OLLAMA_FALLBACK_MODELS),
   ollamaTimeoutMs: toNumber(process.env.OLLAMA_TIMEOUT_MS, 240000),
   ollamaTemperature: toNumber(process.env.OLLAMA_TEMPERATURE, 0.1),
+  /** JSON generation (quiz/lesson drafts). Lower = faster on CPU. */
+  ollamaNumPredict: toNumber(process.env.OLLAMA_NUM_PREDICT, 2048),
+  /** Tutor streaming replies — keep short for responsive practice chat. */
+  ollamaTutorNumPredict: toNumber(process.env.OLLAMA_TUTOR_NUM_PREDICT, 1024),
   aiTutorQuestionCharLimit: toNumber(process.env.AI_TUTOR_QUESTION_CHAR_LIMIT, 1200),
   aiTutorHistoryWindow: toNumber(process.env.AI_TUTOR_HISTORY_WINDOW, 6),
   aiTutorHistoryChars: toNumber(process.env.AI_TUTOR_HISTORY_CHARS, 320),

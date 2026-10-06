@@ -5,6 +5,7 @@ export type OllamaGenerateInput = {
   stream?: boolean;
   format?: "json";
   temperature?: number;
+  numPredict?: number;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
 };
@@ -20,6 +21,10 @@ function candidateModels() {
   return [env.ollamaModel, ...env.ollamaFallbackModels].filter(
     (model, index, list) => Boolean(model) && list.indexOf(model) === index,
   );
+}
+
+function timeoutErrorMessage(model: string) {
+  return `Ollama request timed out after ${env.ollamaTimeoutMs}ms on model "${model}". Try fewer questions, a shorter lesson, a smaller OLLAMA_MODEL, or increase OLLAMA_TIMEOUT_MS.`;
 }
 
 async function readOllamaStream(
@@ -80,14 +85,19 @@ export async function ollamaGenerateText(input: OllamaGenerateInput): Promise<st
   let lastError: Error | null = null;
   const attemptErrors: string[] = [];
   const temperature = Math.min(Math.max(input.temperature ?? env.ollamaTemperature, 0), 0.4);
+  const numPredict = Math.max(256, Math.min(input.numPredict ?? env.ollamaNumPredict, 8192));
 
   for (const model of models) {
     const controller = new AbortController();
+    let timedOut = false;
     const abortHandler = () => controller.abort();
     if (input.signal) {
       input.signal.addEventListener("abort", abortHandler, { once: true });
     }
-    const timeout = setTimeout(() => controller.abort(), env.ollamaTimeoutMs);
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, env.ollamaTimeoutMs);
 
     try {
       const response = await fetch(`${env.ollamaBaseUrl.replace(/\/$/, "")}/api/generate`, {
@@ -98,7 +108,8 @@ export async function ollamaGenerateText(input: OllamaGenerateInput): Promise<st
           prompt: input.prompt,
           stream: Boolean(input.stream),
           ...(input.format ? { format: input.format } : {}),
-          options: { temperature },
+          options: { temperature, num_predict: numPredict },
+          keep_alive: "10m",
         }),
         signal: input.signal ?? controller.signal,
         cache: "no-store",
@@ -137,8 +148,16 @@ export async function ollamaGenerateText(input: OllamaGenerateInput): Promise<st
       }
       return content;
     } catch (error) {
-      if (input.signal?.aborted || isAbortError(error)) {
-        throw error instanceof Error ? error : new Error("Ollama request aborted.");
+      if (isAbortError(error)) {
+        if (input.signal?.aborted && !timedOut) {
+          throw error instanceof Error ? error : new Error("Ollama request aborted.");
+        }
+        if (timedOut) {
+          const message = timeoutErrorMessage(model);
+          attemptErrors.push(message);
+          lastError = new Error(message);
+          continue;
+        }
       }
       const message = error instanceof Error ? error.message : `Model "${model}" request failed.`;
       attemptErrors.push(message);

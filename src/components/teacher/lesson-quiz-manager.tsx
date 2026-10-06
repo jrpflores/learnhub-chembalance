@@ -13,6 +13,7 @@ import { MathTextEditor } from "@/components/ui/math-text-editor";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { QuizAiGenerationPanel } from "@/components/teacher/quiz-ai-generation-panel";
+import { AiAccuracyDisclaimer } from "@/components/ui/ai-accuracy-disclaimer";
 
 type QuizStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 type QuestionType = "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER";
@@ -1032,7 +1033,9 @@ export function LessonQuizManager({
         title="Generate Questions"
         description="Preview with offline AI, add to the quiz immediately, or queue a background job."
       >
-        <QuizAiGenerationPanel
+        <div className="space-y-4">
+          <AiAccuracyDisclaimer compact />
+          <QuizAiGenerationPanel
           lessonId={lesson.id}
           quizId={quiz.id}
           conflictTrackingHint="Track it on this lesson’s Generation tab."
@@ -1048,7 +1051,8 @@ export function LessonQuizManager({
             setSuccess("Generated questions were added to this quiz.");
             router.refresh();
           }}
-        />
+          />
+        </div>
       </Modal>
 
       <Modal

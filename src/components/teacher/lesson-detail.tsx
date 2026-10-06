@@ -18,6 +18,7 @@ import { MathTextEditor } from "@/components/ui/math-text-editor";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { extractApiErrorMessage } from "@/lib/api-error";
 import { QuizAiGenerationPanel } from "@/components/teacher/quiz-ai-generation-panel";
+import { AiAccuracyDisclaimer } from "@/components/ui/ai-accuracy-disclaimer";
 import { OfflineAiBusyBanner, offlineAiJobBusyPhase } from "@/components/teacher/offline-ai-generation-status";
 import { formatDate, formatDateTime } from "@/lib/date-display";
 import { uploadMediaFile } from "@/lib/media-upload";
@@ -1199,6 +1200,7 @@ export function LessonDetail({
         description="Preview with offline AI, add to a quiz, or queue a background job."
       >
         <div className="space-y-4">
+          <AiAccuracyDisclaimer compact />
           <label className="block text-sm font-semibold text-[var(--ink-700)]">
             Quiz
             <select

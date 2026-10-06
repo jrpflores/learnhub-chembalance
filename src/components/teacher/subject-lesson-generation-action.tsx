@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { OfflineAiBusyBanner } from "@/components/teacher/offline-ai-generation-status";
+import { AiAccuracyDisclaimer } from "@/components/ui/ai-accuracy-disclaimer";
 import { extractApiErrorMessage, extractGenerationConflictMessage } from "@/lib/api-error";
 
 type SubjectLessonGenerationActionProps = {
@@ -134,18 +135,19 @@ export function SubjectLessonGenerationAction({
             Section: <span className="font-semibold text-[var(--ink-900)]">{sectionName}</span>
           </div>
 
-          <label className="block text-sm font-semibold text-[var(--ink-700)]">
-            Lesson description
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-[var(--ink-700)]">Lesson description</p>
+            <AiAccuracyDisclaimer compact />
             <textarea
-              className="mt-1 min-h-[120px] w-full rounded-lg border border-[var(--line-300)] px-3 py-2 text-sm"
+              className="min-h-[120px] w-full rounded-lg border border-[var(--line-300)] px-3 py-2 text-sm"
               placeholder="Example: Create a lesson explaining balancing chemical equations with step-by-step examples and a short practice section."
               value={form.promptText}
               onChange={(event) => setForm((prev) => ({ ...prev, promptText: event.target.value }))}
             />
-            <span className="mt-1 block text-xs text-[var(--ink-500)]">
+            <p className="text-xs text-[var(--ink-500)]">
               {promptLength}/{MIN_PROMPT_LENGTH} minimum characters
-            </span>
-          </label>
+            </p>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-semibold text-[var(--ink-700)]">

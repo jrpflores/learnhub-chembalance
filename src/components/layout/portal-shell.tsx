@@ -24,7 +24,6 @@ import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/navigation";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { BrandLogo } from "@/components/layout/brand-logo";
-
 type PortalShellProps = {
   roleLabel: string;
   userName: string;

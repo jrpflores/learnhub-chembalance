@@ -475,6 +475,7 @@ export async function generateLessonPracticeReply(payload: {
       prompt,
       stream: Boolean(payload.onChunk),
       signal: payload.signal,
+      numPredict: env.ollamaTutorNumPredict,
       temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.35),
       onChunk: payload.onChunk
         ? (chunk) => {
@@ -573,6 +574,7 @@ export async function generateLessonPracticeOpeningQuestion(payload: {
       prompt,
       stream: Boolean(payload.onChunk),
       signal: payload.signal,
+      numPredict: env.ollamaTutorNumPredict,
       temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
       onChunk: payload.onChunk
         ? (chunk) => {

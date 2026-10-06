@@ -46,7 +46,6 @@ export default async function StudentResultDetailPage({
       attempt.explanationMode === "AFTER_SUBMISSION" ||
       (attempt.explanationMode === "AFTER_PASS" && passed));
   const hasShortAnswers = attempt.answers.some((answer) => answer.type === "SHORT_ANSWER");
-
   return (
     <div className="space-y-4">
       <StudentPageHeader

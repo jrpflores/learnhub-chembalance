@@ -158,6 +158,7 @@ ${input.promptText.slice(0, 2400)}
     prompt,
     format: "json",
     temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.35),
+    numPredict: Math.min(env.ollamaNumPredict, 2800),
   });
 
   const parsed = asJsonObject(modelOutput);

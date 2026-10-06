@@ -384,6 +384,7 @@ ${lessonContext}
     prompt,
     format: "json",
     temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
+    numPredict: Math.min(env.ollamaNumPredict, 800 + sanitizedQuestionCount * 420),
   });
 
   const rawJson = asJsonObject(modelOutput);

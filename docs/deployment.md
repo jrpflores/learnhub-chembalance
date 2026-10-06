@@ -39,7 +39,30 @@ Critical variables:
 - `OFFLINE_GRADER_TIMEOUT_MS`
 - `GRADER_PROVIDER` (`auto` or `heuristic` or `ollama`)
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS`, `OLLAMA_TEMPERATURE`
-- `OLLAMA_FALLBACK_MODELS` (optional comma-separated fallback model list; leave empty unless preloaded)
+- `OLLAMA_NUM_PREDICT` (cap tokens for quiz/lesson JSON; default `2048` for lite CPU setups)
+- `OLLAMA_TUTOR_NUM_PREDICT` (cap tutor reply length; default `1024` for smoother practice chat)
+- `OLLAMA_FALLBACK_MODELS` (optional; **leave empty** for lite profile — each fallback can add another full timeout)
+
+### Lite offline AI (recommended for smooth CPU use)
+
+1. Pull one small model into the Ollama container:
+
+```bash
+docker exec -it learnhub-ollama ollama pull qwen2.5:3b
+```
+
+2. Point all services at that model only:
+
+```env
+OLLAMA_MODEL="qwen2.5:3b"
+OLLAMA_FALLBACK_MODELS=""
+OLLAMA_NUM_PREDICT="2048"
+OLLAMA_TUTOR_NUM_PREDICT="1024"
+```
+
+3. Restart `lms`, `worker`, and `offline-grader` after changing `.env`.
+
+Alternatives if you need even faster (weaker) output: `gemma2:2b`, `llama3.2:3b` — must match `ollama list` on the host.
 - `AI_GRADING_MODE` (`sync` or `queue`)
 - `AI_FALLBACK_BEHAVIOR` (`manual_review` or `rule_based`)
 - `AI_CONFIDENCE_HIGH`, `AI_CONFIDENCE_MEDIUM`
