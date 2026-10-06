@@ -271,6 +271,10 @@ export function createPracticeSession(payload: {
   const db = getDb();
   const id = crypto.randomUUID();
   const now = nowIso();
+
+  // Close any leftover open sessions so the list does not stay stuck on IN_PROGRESS.
+  abandonOpenPracticeSessions(payload.studentId);
+
   db.prepare(
     `INSERT INTO equation_practice_sessions (
       id, student_id, section_id, topic, status, started_at, created_at, updated_at
@@ -278,6 +282,25 @@ export function createPracticeSession(payload: {
   ).run(id, payload.studentId, payload.sectionId ?? null, payload.topic ?? null, now, now, now);
 
   return id;
+}
+
+export function abandonOpenPracticeSessions(studentId: string, exceptSessionId?: string) {
+  const db = getDb();
+  const now = nowIso();
+  if (exceptSessionId) {
+    db.prepare(
+      `UPDATE equation_practice_sessions
+       SET status = 'ABANDONED', completed_at = COALESCE(completed_at, ?), updated_at = ?
+       WHERE student_id = ? AND status = 'IN_PROGRESS' AND id != ?`,
+    ).run(now, now, studentId, exceptSessionId);
+    return;
+  }
+
+  db.prepare(
+    `UPDATE equation_practice_sessions
+     SET status = 'ABANDONED', completed_at = COALESCE(completed_at, ?), updated_at = ?
+     WHERE student_id = ? AND status = 'IN_PROGRESS'`,
+  ).run(now, now, studentId);
 }
 
 export function getPracticeSessionById(sessionId: string, studentId?: string) {
@@ -422,7 +445,7 @@ export function completePracticeSession(sessionId: string) {
   db.prepare(
     `UPDATE equation_practice_sessions
      SET status = 'COMPLETED', completed_at = ?, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND status = 'IN_PROGRESS'`,
   ).run(now, now, sessionId);
 }
 

@@ -126,7 +126,8 @@ export async function PATCH(request: Request) {
       instructions: parsed.data.instructions,
       passingScore: parsed.data.passingScore,
       timeLimitSec: parsed.data.timeLimitSec,
-      maxAttempts: parsed.data.maxAttempts,
+      // Explicitly allow 0 (unlimited). Do not drop falsy numbers.
+      ...(parsed.data.maxAttempts !== undefined ? { maxAttempts: parsed.data.maxAttempts } : {}),
       status: parsed.data.status,
       availableFrom: parsed.data.availableFrom,
       availableUntil: parsed.data.availableUntil,

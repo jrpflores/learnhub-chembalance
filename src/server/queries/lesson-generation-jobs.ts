@@ -80,6 +80,28 @@ function mapLessonGenerationJob(row: LessonGenerationJobRow) {
   };
 }
 
+export function findActiveLessonGenerationJobForContext(payload: {
+  teacherId: string;
+  subjectId: string;
+  sectionId: string;
+}) {
+  const db = getDb();
+  ensureLessonGenerationJobsTable();
+  const row = db
+    .prepare<{ id: string }>(
+      `SELECT id
+       FROM lesson_generation_jobs
+       WHERE teacher_id = ?
+         AND subject_id = ?
+         AND section_id = ?
+         AND status IN ('PENDING', 'PROCESSING')
+       ORDER BY queued_at DESC
+       LIMIT 1`,
+    )
+    .get(payload.teacherId, payload.subjectId, payload.sectionId);
+  return row?.id ?? null;
+}
+
 export function createLessonGenerationJob(payload: {
   teacherId: string;
   subjectId: string;
@@ -92,6 +114,16 @@ export function createLessonGenerationJob(payload: {
 }) {
   const db = getDb();
   ensureLessonGenerationJobsTable();
+
+  const activeJobId = findActiveLessonGenerationJobForContext({
+    teacherId: payload.teacherId,
+    subjectId: payload.subjectId,
+    sectionId: payload.sectionId,
+  });
+  if (activeJobId) {
+    return { jobId: null as null, conflictJobId: activeJobId };
+  }
+
   const id = crypto.randomUUID();
 
   db.prepare(
@@ -121,7 +153,7 @@ export function createLessonGenerationJob(payload: {
     new Date().toISOString(),
   );
 
-  return id;
+  return { jobId: id, conflictJobId: null as null };
 }
 
 export function listLessonGenerationJobsByContext(payload: {

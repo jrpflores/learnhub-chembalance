@@ -5,6 +5,17 @@ export function extractApiErrorMessage(payload: ApiPayload, fallback: string) {
   return parsed.title;
 }
 
+export function extractGenerationConflictMessage(payload: ApiPayload, fallback: string, trackingHint?: string) {
+  const base = extractApiErrorMessage(payload, fallback);
+  const conflictJobId = asNonEmptyString(payload?.conflictJobId);
+  if (!conflictJobId) {
+    return base;
+  }
+  const shortId = `${conflictJobId.slice(0, 8)}…`;
+  const hint = trackingHint?.trim();
+  return hint ? `${base} Active job ${shortId} ${hint}` : `${base} Active job ${shortId}`;
+}
+
 export function extractApiError(payload: ApiPayload, fallback: string) {
   const validationMessages = extractValidationMessages(payload?.details);
   const explicitError = asNonEmptyString(payload?.error);

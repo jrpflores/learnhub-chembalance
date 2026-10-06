@@ -75,13 +75,55 @@ h6 {
   text-decoration: none;
 }
 
-/* Enforce readable contrast on green action buttons/links across pages. */
-:where(button, a, [role="button"])[class*="bg-[var(--brand-500)]"],
-:where(button, a, [role="button"])[class*="bg-[var(--brand-600)]"],
-:where(button, a, [role="button"])[class*="bg-[var(--brand-700)]"],
-:where(button, a, [role="button"])[class*="bg-[var(--success-500)]"],
-:where(button, a, [role="button"])[class*="bg-green-"] {
+/* Enforce readable contrast on green action buttons/links across pages.
+   Match whole bg-* utility tokens only (avoid false hits on text-[var(--brand-*)]). */
+:where(button, a, [role="button"])[class*="bg-[var(--brand-500)]"]:not([class*="bg-white"]):not([class*="bg-transparent"]),
+:where(button, a, [role="button"])[class*="bg-[var(--brand-600)]"]:not([class*="bg-white"]):not([class*="bg-transparent"]),
+:where(button, a, [role="button"])[class*=" bg-[var(--brand-700)]"]:not([class*="bg-white"]):not([class*="bg-transparent"]),
+:where(button, a, [role="button"])[class^="bg-[var(--brand-700)]"]:not([class*="bg-white"]):not([class*="bg-transparent"]),
+:where(button, a, [role="button"])[class*="bg-[var(--success-500)]"]:not([class*="bg-white"]):not([class*="bg-transparent"]),
+:where(button, a, [role="button"])[class*="bg-green-"]:not([class*="bg-white"]):not([class*="bg-transparent"]) {
   color: #fff !important;
+}
+
+/* Inverted CTAs on green hero cards — beat inherited text-white. */
+.student-hero-cta-primary {
+  display: inline-flex;
+  height: 2.5rem;
+  min-width: 7.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background-color: #ffffff;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--brand-700) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  transition: background-color 150ms ease;
+}
+
+.student-hero-cta-primary:hover {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.student-hero-cta-secondary {
+  display: inline-flex;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background-color: transparent;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff !important;
+  transition: background-color 150ms ease;
+}
+
+.student-hero-cta-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .lesson-markdown {

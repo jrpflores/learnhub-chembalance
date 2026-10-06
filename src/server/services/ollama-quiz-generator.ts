@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { env } from "@/lib/env";
+import { ollamaGenerateText } from "@/server/services/ollama-client";
 
 export type GeneratedQuizQuestion = {
   questionText: string;
@@ -66,13 +67,6 @@ const rawResponseSchema = z.union([
   z.array(rawQuestionSchema).min(1),
 ]);
 
-function isAbortError(error: unknown) {
-  return (
-    (error instanceof DOMException && error.name === "AbortError") ||
-    (error instanceof Error && error.name === "AbortError")
-  );
-}
-
 function normalizeRequestedQuestionTypes(questionTypes?: GeneratedQuizQuestionType[]) {
   const unique = [...new Set((questionTypes ?? []).filter(Boolean))];
   if (unique.length === 0) {
@@ -108,31 +102,70 @@ function asJsonObject(value: string) {
   }
 }
 
-function normalizeQuestion(
+function resolveMultipleChoiceCorrectAnswer(correctAnswerRaw: string, choices: string[]) {
+  const trimmed = correctAnswerRaw.trim();
+  const lower = trimmed.toLowerCase();
+  const byValue = choices.find((choice) => choice.trim().toLowerCase() === lower);
+  if (byValue) {
+    return byValue;
+  }
+  const labelMatch = trimmed.match(/^[A-D]$/i);
+  if (labelMatch) {
+    const index = labelMatch[0].toUpperCase().charCodeAt(0) - 65;
+    if (index >= 0 && index < choices.length) {
+      return choices[index];
+    }
+  }
+  return null;
+}
+
+export function tryNormalizeGeneratedQuizQuestion(
   raw: z.infer<typeof rawQuestionSchema>,
   allowedTypes: GeneratedQuizQuestionType[],
-): GeneratedQuizQuestion {
-  const detectedType = normalizedType(raw.question_type);
-  const questionType = allowedTypes.includes(detectedType) ? detectedType : allowedTypes[0];
+): GeneratedQuizQuestion | null {
+  const questionText = raw.question_text.trim();
+  if (questionText.length < 4) {
+    return null;
+  }
 
-  if (questionType === "TRUE_FALSE") {
+  const detectedType = normalizedType(raw.question_type);
+  if (!allowedTypes.includes(detectedType)) {
+    return null;
+  }
+
+  const explanation =
+    raw.explanation.trim() ||
+    (detectedType === "TRUE_FALSE"
+      ? "Review the lesson concept tied to this statement."
+      : detectedType === "SHORT_ANSWER"
+        ? "Use key ideas from the lesson in your explanation."
+        : "Match your reasoning with the key concepts from this lesson section.");
+
+  if (detectedType === "TRUE_FALSE") {
+    if (!/(true|false)/i.test(raw.correct_answer)) {
+      return null;
+    }
     const correct = /true/i.test(raw.correct_answer) ? "True" : "False";
     return {
-      questionText: raw.question_text.trim(),
-      questionType,
+      questionText,
+      questionType: detectedType,
       choices: ["True", "False"],
       correctAnswer: correct,
-      explanation: raw.explanation.trim() || "Review the lesson concept tied to this statement.",
+      explanation,
     };
   }
 
-  if (questionType === "SHORT_ANSWER") {
+  if (detectedType === "SHORT_ANSWER") {
+    const correctAnswer = raw.correct_answer.trim();
+    if (correctAnswer.length < 1) {
+      return null;
+    }
     return {
-      questionText: raw.question_text.trim(),
-      questionType,
+      questionText,
+      questionType: detectedType,
       choices: [],
-      correctAnswer: raw.correct_answer.trim(),
-      explanation: raw.explanation.trim() || "Use key ideas from the lesson in your explanation.",
+      correctAnswer,
+      explanation,
     };
   }
 
@@ -141,22 +174,21 @@ function normalizeQuestion(
     .filter(Boolean)
     .slice(0, 4);
 
-  const normalizedChoices = cleanedChoices.length >= 2 ? cleanedChoices : [raw.correct_answer.trim(), "None of the above"];
-  if (normalizedChoices.length < 4) {
-    while (normalizedChoices.length < 4) {
-      normalizedChoices.push(`Distractor ${normalizedChoices.length}`);
-    }
+  if (cleanedChoices.length < 2) {
+    return null;
   }
 
-  const exactMatch = normalizedChoices.find((choice) => choice.toLowerCase() === raw.correct_answer.trim().toLowerCase());
-  const correctAnswer = exactMatch ?? normalizedChoices[0];
+  const correctAnswer = resolveMultipleChoiceCorrectAnswer(raw.correct_answer, cleanedChoices);
+  if (!correctAnswer) {
+    return null;
+  }
 
   return {
-    questionText: raw.question_text.trim(),
-    questionType,
-    choices: normalizedChoices,
+    questionText,
+    questionType: "MULTIPLE_CHOICE",
+    choices: cleanedChoices,
     correctAnswer,
-    explanation: raw.explanation.trim() || "Match your reasoning with the key concepts from this lesson section.",
+    explanation,
   };
 }
 
@@ -306,6 +338,10 @@ function buildRelevantLessonContext(input: GenerateQuizFromLessonInput) {
 }
 
 export async function generateQuizFromLesson(input: GenerateQuizFromLessonInput): Promise<GeneratedQuizQuestion[]> {
+  if (!env.offlineAiEnabled) {
+    throw new Error("Offline AI is disabled. Enable OFFLINE_AI_ENABLED to generate quiz questions.");
+  }
+
   const sanitizedQuestionCount = Math.max(1, Math.min(input.questionCount, MAX_GENERATED_QUESTIONS));
   const allowedTypes = normalizeRequestedQuestionTypes(input.questionTypes);
   const allowedTypesText = allowedTypes.join(", ");
@@ -344,68 +380,31 @@ Relevant lesson excerpts (trimmed for context budget):
 ${lessonContext}
 `.trim();
 
-  const candidateModels = [env.ollamaModel, ...env.ollamaFallbackModels].filter(
-    (model, index, list) => Boolean(model) && list.indexOf(model) === index,
-  );
+  const modelOutput = await ollamaGenerateText({
+    prompt,
+    format: "json",
+    temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
+  });
 
-  let lastError: Error | null = null;
-
-  for (const model of candidateModels) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), env.ollamaTimeoutMs);
-
-    try {
-      const response = await fetch(`${env.ollamaBaseUrl.replace(/\/$/, "")}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          prompt,
-          stream: false,
-          format: "json",
-          options: {
-            temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
-          },
-        }),
-        signal: controller.signal,
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        const rawError = await response.text();
-        const errorDetail = rawError ? ` (${rawError.slice(0, 180)})` : "";
-        lastError = new Error(`Ollama model "${model}" returned ${response.status}${errorDetail}`);
-        continue;
-      }
-
-      const payload = (await response.json()) as { response?: string };
-      const modelOutput = payload.response?.trim() ?? "";
-      const rawJson = asJsonObject(modelOutput);
-      if (!rawJson) {
-        lastError = new Error(`Model "${model}" returned non-JSON content.`);
-        continue;
-      }
-
-      const parsed = rawResponseSchema.safeParse(rawJson);
-      if (!parsed.success) {
-        lastError = new Error(`Model "${model}" output did not match expected structure.`);
-        continue;
-      }
-
-      const rawQuestions = Array.isArray(parsed.data) ? parsed.data : parsed.data.questions;
-      return rawQuestions.slice(0, sanitizedQuestionCount).map((question) => normalizeQuestion(question, allowedTypes));
-    } catch (error) {
-      if (isAbortError(error)) {
-        lastError = new Error(
-          `Ollama request timed out after ${env.ollamaTimeoutMs}ms on model "${model}". Try fewer questions, a lighter model, or increase OLLAMA_TIMEOUT_MS.`,
-        );
-        continue;
-      }
-      lastError = error instanceof Error ? error : new Error(`Model "${model}" request failed.`);
-    } finally {
-      clearTimeout(timeout);
-    }
+  const rawJson = asJsonObject(modelOutput);
+  if (!rawJson) {
+    throw new Error("Ollama returned non-JSON quiz content.");
   }
 
-  throw lastError ?? new Error("No configured Ollama model could generate quiz questions.");
+  const parsed = rawResponseSchema.safeParse(rawJson);
+  if (!parsed.success) {
+    throw new Error("Ollama quiz output did not match expected structure.");
+  }
+
+  const rawQuestions = Array.isArray(parsed.data) ? parsed.data : parsed.data.questions;
+  const normalized = rawQuestions
+    .slice(0, sanitizedQuestionCount)
+    .map((question) => tryNormalizeGeneratedQuizQuestion(question, allowedTypes))
+    .filter((question): question is GeneratedQuizQuestion => question !== null);
+
+  if (normalized.length === 0) {
+    throw new Error("Ollama returned zero valid questions after validation.");
+  }
+
+  return normalized;
 }

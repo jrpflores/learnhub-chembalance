@@ -34,7 +34,7 @@ export function roleNavigation(role: Role) {
     { label: "Subjects", href: "/student/subjects" },
     { label: "Lessons", href: "/student/lessons" },
     { label: "Quizzes", href: "/student/quizzes" },
-    { label: "Practice", href: "/student/practice/equations" },
+    { label: "Practice", href: "/student/practice" },
     { label: "Results", href: "/student/results" },
     { label: "Achievements", href: "/student/achievements" },
     { label: "Profile", href: "/student/profile" },

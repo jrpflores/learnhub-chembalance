@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
-import { extractApiErrorMessage } from "@/lib/api-error";
+import { OfflineAiBusyBanner } from "@/components/teacher/offline-ai-generation-status";
+import { extractApiErrorMessage, extractGenerationConflictMessage } from "@/lib/api-error";
 
 type SubjectLessonGenerationActionProps = {
   subjectId: string;
@@ -89,7 +90,15 @@ export function SubjectLessonGenerationAction({
 
       const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
       if (!response.ok) {
-        setError(extractApiErrorMessage(payload, "Unable to queue lesson generation."));
+        const message =
+          response.status === 409
+            ? extractGenerationConflictMessage(
+                payload,
+                "A lesson generation job is already queued or running for this section.",
+                "Open the Background Jobs tab to track it.",
+              )
+            : extractApiErrorMessage(payload, "Unable to queue lesson generation.");
+        setError(message);
         return;
       }
 
@@ -115,9 +124,10 @@ export function SubjectLessonGenerationAction({
         open={open}
         onClose={closeModal}
         title="Generate Lesson"
-        description="Describe the lesson you want to generate. The job runs in background and saves a draft lesson in this subject and section."
+        description="Describe the lesson you want. Offline AI builds a draft in the background—often 1–3 minutes on CPU once the worker starts."
       >
         <div className="space-y-4">
+          {pending ? <OfflineAiBusyBanner phase="queue-lesson-job" /> : null}
           <div className="rounded-xl border border-[var(--line-200)] bg-[var(--line-100)] px-3 py-2 text-sm text-[var(--ink-700)]">
             Subject: <span className="font-semibold text-[var(--ink-900)]">{subjectName}</span>
             <span className="mx-1 text-[var(--ink-400)]">•</span>

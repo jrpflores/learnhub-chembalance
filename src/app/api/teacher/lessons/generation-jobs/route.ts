@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const jobId = createLessonGenerationJob({
+  const created = createLessonGenerationJob({
     teacherId: auth.user.id,
     subjectId: parsed.data.subjectId,
     sectionId: parsed.data.sectionId,
@@ -122,5 +122,15 @@ export async function POST(request: Request) {
     preferredEstimatedMinutes: parsed.data.preferredEstimatedMinutes,
   });
 
-  return NextResponse.json({ success: true, jobId }, { status: 202 });
+  if (!created.jobId) {
+    return NextResponse.json(
+      {
+        error: "A lesson generation job is already queued or running for this section.",
+        conflictJobId: created.conflictJobId,
+      },
+      { status: 409 },
+    );
+  }
+
+  return NextResponse.json({ success: true, jobId: created.jobId }, { status: 202 });
 }

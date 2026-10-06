@@ -123,8 +123,8 @@ export async function POST(request: Request) {
               })),
               question: parsed.data.message,
               signal: routeAbortController.signal,
-              onChunk: (chunk) => {
-                push({ type: "chunk", chunk });
+              onChunk: (displayDraft) => {
+                push({ type: "chunk", displayDraft });
               },
             });
 
@@ -133,13 +133,15 @@ export async function POST(request: Request) {
               return;
             }
 
-            const assistantMessage = createLessonPracticeMessage({
-              lessonId: parsed.data.lessonId,
-              studentId: auth.user.id,
-              conversationId: conversation.id,
-              role: "ASSISTANT",
-              contentMarkdown: assistantReply,
-            });
+            const assistantMessage = assistantReply.isFallback
+              ? null
+              : createLessonPracticeMessage({
+                  lessonId: parsed.data.lessonId,
+                  studentId: auth.user.id,
+                  conversationId: conversation.id,
+                  role: "ASSISTANT",
+                  contentMarkdown: assistantReply.contentMarkdown,
+                });
 
             const messages = listLessonPracticeMessages({
               lessonId: parsed.data.lessonId,
@@ -152,6 +154,7 @@ export async function POST(request: Request) {
               type: "done",
               conversationId: conversation.id,
               assistantMessage,
+              fallbackMessage: assistantReply.isFallback ? assistantReply.contentMarkdown : null,
               messages,
             });
           } catch (error) {
@@ -199,13 +202,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Request canceled" }, { status: 499 });
     }
 
-    const assistantMessage = createLessonPracticeMessage({
-      lessonId: parsed.data.lessonId,
-      studentId: auth.user.id,
-      conversationId: conversation.id,
-      role: "ASSISTANT",
-      contentMarkdown: assistantReply,
-    });
+    const assistantMessage = assistantReply.isFallback
+      ? null
+      : createLessonPracticeMessage({
+          lessonId: parsed.data.lessonId,
+          studentId: auth.user.id,
+          conversationId: conversation.id,
+          role: "ASSISTANT",
+          contentMarkdown: assistantReply.contentMarkdown,
+        });
 
     const messages = listLessonPracticeMessages({
       lessonId: parsed.data.lessonId,
@@ -219,6 +224,7 @@ export async function POST(request: Request) {
       conversationId: conversation.id,
       studentMessage,
       assistantMessage,
+      fallbackMessage: assistantReply.isFallback ? assistantReply.contentMarkdown : null,
       messages,
     });
   } catch (error) {

@@ -121,6 +121,15 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
     });
   }
 
+  async function readApiError(response: Response, fallback: string) {
+    try {
+      const payload = (await response.json()) as { error?: string };
+      return payload.error?.trim() || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   function onCreateUser() {
     setError(null);
 
@@ -138,10 +147,8 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
-
       if (!response.ok) {
-        setError(payload.error ?? "Unable to create user");
+        setError(await readApiError(response, "Unable to create user"));
         return;
       }
 
@@ -202,9 +209,8 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError(payload.error ?? "Unable to update name");
+        setError(await readApiError(response, "Unable to update name"));
         return;
       }
 
@@ -235,9 +241,8 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError(payload.error ?? "Unable to reset password");
+        setError(await readApiError(response, "Unable to reset password"));
         return;
       }
 
@@ -269,9 +274,8 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError(payload.error ?? "Unable to delete user");
+        setError(await readApiError(response, "Unable to delete user"));
         return;
       }
 

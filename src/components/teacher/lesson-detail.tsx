@@ -17,6 +17,8 @@ import { SubjectLessonGenerationAction } from "@/components/teacher/subject-less
 import { MathTextEditor } from "@/components/ui/math-text-editor";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { extractApiErrorMessage } from "@/lib/api-error";
+import { QuizAiGenerationPanel } from "@/components/teacher/quiz-ai-generation-panel";
+import { OfflineAiBusyBanner, offlineAiJobBusyPhase } from "@/components/teacher/offline-ai-generation-status";
 import { formatDate, formatDateTime } from "@/lib/date-display";
 import { uploadMediaFile } from "@/lib/media-upload";
 
@@ -140,12 +142,6 @@ export function LessonDetail({
   const [coverUploading, setCoverUploading] = useState(false);
   const [selectedQuizToLink, setSelectedQuizToLink] = useState("");
   const [selectedQuizForGeneration, setSelectedQuizForGeneration] = useState("");
-  const [generationQuestionCount, setGenerationQuestionCount] = useState("5");
-  const [generationTypes, setGenerationTypes] = useState<("MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER")[]>([
-    "MULTIPLE_CHOICE",
-    "TRUE_FALSE",
-    "SHORT_ANSWER",
-  ]);
   const coverFileInputRef = useRef<HTMLInputElement | null>(null);
   const [quizForm, setQuizForm] = useState({
     title: "",
@@ -228,65 +224,31 @@ export function LessonDetail({
     setGenerateQuizOpen(true);
   }
 
-  function sanitizedQuestionCount(value: string) {
-    const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed)) {
-      return 5;
-    }
-    return Math.max(1, Math.min(parsed, 10));
-  }
-
-  function enqueueGenerationJob() {
-    if (!selectedQuizForGeneration) {
+  function afterGenerationQueued() {
+    setGenerateQuizOpen(false);
+    setSuccess("Generation job queued. You can keep navigating while questions are generated.");
+    if (breadcrumbContext?.subjectId) {
+      const params = new URLSearchParams();
+      params.set("tab", "generation");
+      params.set("subjectId", breadcrumbContext.subjectId);
+      if (breadcrumbContext.sectionId) {
+        params.set("sectionId", breadcrumbContext.sectionId);
+      }
+      if (breadcrumbContext.returnTab) {
+        params.set("returnTab", breadcrumbContext.returnTab);
+      }
+      router.push(`/teacher/lessons/${lesson.id}?${params.toString()}`);
       return;
     }
+    setActiveTab("generation");
+    void loadGenerationJobs();
+    router.refresh();
+  }
 
-    const count = sanitizedQuestionCount(generationQuestionCount);
-    const types =
-      generationTypes.length > 0
-        ? generationTypes
-        : (["MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"] as ("MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER")[]);
-
-    setError(null);
-    setSuccess(null);
-    startTransition(async () => {
-      const response = await fetch("/api/teacher/quizzes/generation-jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lessonId: lesson.id,
-          quizId: selectedQuizForGeneration,
-          questionCount: count,
-          questionTypes: types,
-        }),
-      });
-
-      const payload = (await response.json()) as Record<string, unknown>;
-      if (!response.ok) {
-        setError(extractApiErrorMessage(payload, "Unable to queue generation job."));
-        return;
-      }
-
-      setGenerateQuizOpen(false);
-      setGenerationQuestionCount(String(count));
-      setSuccess("Generation job queued. You can keep navigating while questions are generated.");
-      if (breadcrumbContext?.subjectId) {
-        const params = new URLSearchParams();
-        params.set("tab", "generation");
-        params.set("subjectId", breadcrumbContext.subjectId);
-        if (breadcrumbContext.sectionId) {
-          params.set("sectionId", breadcrumbContext.sectionId);
-        }
-        if (breadcrumbContext.returnTab) {
-          params.set("returnTab", breadcrumbContext.returnTab);
-        }
-        router.push(`/teacher/lessons/${lesson.id}?${params.toString()}`);
-        return;
-      }
-      setActiveTab("generation");
-      await loadGenerationJobs();
-      router.refresh();
-    });
+  function afterGenerationSaved() {
+    setGenerateQuizOpen(false);
+    setSuccess("Generated questions were added to the selected quiz.");
+    router.refresh();
   }
 
   function saveLessonDetails() {
@@ -1071,6 +1033,10 @@ export function LessonDetail({
                     <p>Completed: {job.completedAt ? formatDateTime(job.completedAt) : "In progress"}</p>
                     <p>Created Questions: {job.createdCount}</p>
                   </div>
+                  {(() => {
+                    const busyPhase = offlineAiJobBusyPhase(job.status);
+                    return busyPhase ? <OfflineAiBusyBanner phase={busyPhase} className="mt-3" /> : null;
+                  })()}
                   {job.errorMessage ? (
                     <div className="mt-3 rounded-lg border border-[var(--danger-500)] bg-[var(--danger-100)] px-3 py-2 text-sm text-[var(--danger-700)]">
                       {job.errorMessage}
@@ -1230,7 +1196,7 @@ export function LessonDetail({
         open={generateQuizOpen}
         onClose={() => setGenerateQuizOpen(false)}
         title="Generate Questions"
-        description="Queue a background generation job. You can leave this page while it runs."
+        description="Preview with offline AI, add to a quiz, or queue a background job."
       >
         <div className="space-y-4">
           <label className="block text-sm font-semibold text-[var(--ink-700)]">
@@ -1248,53 +1214,20 @@ export function LessonDetail({
               ))}
             </select>
           </label>
-          <InputField
-            label="Question Count"
-            type="number"
-            value={generationQuestionCount}
-            onChange={(value) => setGenerationQuestionCount(String(sanitizedQuestionCount(value)))}
-          />
-          <div>
-            <p className="text-sm font-semibold text-[var(--ink-700)]">Question Types</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(
-                [
-                  { value: "MULTIPLE_CHOICE", label: "Multiple Choice" },
-                  { value: "TRUE_FALSE", label: "True / False" },
-                  { value: "SHORT_ANSWER", label: "Short Answer" },
-                ] as const
-              ).map((typeOption) => {
-                const selected = generationTypes.includes(typeOption.value);
-                return (
-                  <button
-                    key={typeOption.value}
-                    type="button"
-                    onClick={() =>
-                      setGenerationTypes((prev) =>
-                        prev.includes(typeOption.value)
-                          ? prev.filter((entry) => entry !== typeOption.value)
-                          : [...prev, typeOption.value],
-                      )
-                    }
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
-                      selected
-                        ? "border-[var(--brand-600)] bg-[var(--brand-500)] text-white"
-                        : "border-[var(--line-300)] bg-white text-[var(--ink-700)] hover:bg-[var(--line-100)]"
-                    }`}
-                  >
-                    {typeOption.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-2 text-xs text-[var(--ink-500)]">Choose at least one type. Maximum generation per job: 10 questions.</p>
-          </div>
-          <div className="flex justify-end gap-2">
+          {selectedQuizForGeneration ? (
+            <QuizAiGenerationPanel
+              lessonId={lesson.id}
+              quizId={selectedQuizForGeneration}
+              conflictTrackingHint="Track it on this page’s Generation tab."
+              onQueued={afterGenerationQueued}
+              onSaved={afterGenerationSaved}
+            />
+          ) : (
+            <p className="text-sm text-[var(--ink-500)]">Select a quiz to preview or generate questions.</p>
+          )}
+          <div className="flex justify-end">
             <Button variant="secondary" onClick={() => setGenerateQuizOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={enqueueGenerationJob} disabled={!selectedQuizForGeneration || generationTypes.length === 0 || pending}>
-              {pending ? "Queueing..." : "Queue Generation"}
+              Close
             </Button>
           </div>
         </div>

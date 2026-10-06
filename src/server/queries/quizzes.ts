@@ -672,6 +672,7 @@ export function listStudentQuizzes(studentId: string) {
         available_until: string | null;
         question_count: number;
         attempts_used: number;
+        in_progress_count: number;
         best_score: number | null;
         latest_outcome: string | null;
         latest_attempt_id: string | null;
@@ -689,7 +690,8 @@ export function listStudentQuizzes(studentId: string) {
         q.available_from,
         q.available_until,
         COUNT(DISTINCT qq.id) AS question_count,
-        COUNT(DISTINCT qa.id) AS attempts_used,
+        COUNT(DISTINCT CASE WHEN qa.status != 'ABANDONED' THEN qa.id END) AS attempts_used,
+        COUNT(DISTINCT CASE WHEN qa.status = 'IN_PROGRESS' THEN qa.id END) AS in_progress_count,
         MAX(qa.score_percent) AS best_score,
         (
           SELECT qa2.outcome
@@ -725,24 +727,33 @@ export function listStudentQuizzes(studentId: string) {
       ORDER BY q.published_at DESC`,
     )
     .all(studentId, studentId, studentId, studentId)
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      lessonId: row.lesson_id,
-      lessonTitle: row.lesson_title,
-      passingScore: row.passing_score,
-      timeLimitSec: row.time_limit_sec,
-      maxAttempts: row.max_attempts,
-      availableFrom: row.available_from,
-      availableUntil: row.available_until,
-      questionCount: row.question_count,
-      attemptsUsed: row.attempts_used,
-      bestScore: row.best_score,
-      latestOutcome: row.latest_outcome,
-      latestAttemptId: row.latest_attempt_id,
-      canAttempt: row.max_attempts <= 0 || row.attempts_used < row.max_attempts,
-    }));
+    .map((row) => {
+      const maxAttempts = Number.isFinite(row.max_attempts) ? row.max_attempts : 3;
+      const unlimited = maxAttempts <= 0;
+      const attemptsUsed = row.attempts_used;
+      const hasInProgress = row.in_progress_count > 0;
+      const canStartNew = unlimited || attemptsUsed < maxAttempts;
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        lessonId: row.lesson_id,
+        lessonTitle: row.lesson_title,
+        passingScore: row.passing_score,
+        timeLimitSec: row.time_limit_sec,
+        maxAttempts,
+        availableFrom: row.available_from,
+        availableUntil: row.available_until,
+        questionCount: row.question_count,
+        attemptsUsed,
+        hasInProgress,
+        bestScore: row.best_score,
+        latestOutcome: row.latest_outcome,
+        latestAttemptId: row.latest_attempt_id,
+        // Allow resume even when the open attempt already filled the last slot.
+        canAttempt: canStartNew || hasInProgress,
+      };
+    });
 }
 
 export function listStudentAttempts(studentId: string) {
@@ -1596,22 +1607,52 @@ export function getNextAttemptNumber(quizId: string, studentId: string) {
   return (row?.max_attempt ?? 0) + 1;
 }
 
+export function getInProgressAttempt(quizId: string, studentId: string) {
+  const db = getDb();
+
+  return (
+    db
+      .prepare<{ id: string; attempt_number: number }>(
+        `SELECT id, attempt_number
+         FROM quiz_attempts
+         WHERE quiz_id = ? AND student_id = ? AND status = 'IN_PROGRESS'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get(quizId, studentId) ?? null
+  );
+}
+
 export function getQuizAttemptUsage(quizId: string, studentId: string) {
   const db = getDb();
 
   const row = db
-    .prepare<{ used: number; max_attempts: number }>(
+    .prepare<{ used: number; in_progress: number; max_attempts: number | null }>(
       `SELECT
-         (SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = ? AND student_id = ?) AS used,
+         (SELECT COUNT(*) FROM quiz_attempts
+          WHERE quiz_id = ? AND student_id = ? AND status != 'ABANDONED') AS used,
+         (SELECT COUNT(*) FROM quiz_attempts
+          WHERE quiz_id = ? AND student_id = ? AND status = 'IN_PROGRESS') AS in_progress,
          (SELECT max_attempts FROM quizzes WHERE id = ?) AS max_attempts`,
     )
-    .get(quizId, studentId, quizId);
+    .get(quizId, studentId, quizId, studentId, quizId);
+
+  // 0 means unlimited; null/invalid falls back to schema default (3), not unlimited.
+  const maxAttempts = row?.max_attempts == null || !Number.isFinite(row.max_attempts) ? 3 : row.max_attempts;
+  const used = row?.used ?? 0;
+  const hasInProgress = (row?.in_progress ?? 0) > 0;
+  const unlimited = maxAttempts <= 0;
+  const remaining = unlimited ? null : Math.max(0, maxAttempts - used);
+  const canStartNew = unlimited || (remaining ?? 0) > 0;
 
   return {
-    used: row?.used ?? 0,
-    maxAttempts: row?.max_attempts ?? 0,
-    remaining: (row?.max_attempts ?? 0) <= 0 ? null : Math.max(0, (row?.max_attempts ?? 0) - (row?.used ?? 0)),
-    unlimited: (row?.max_attempts ?? 0) <= 0,
+    used,
+    maxAttempts,
+    remaining,
+    unlimited,
+    hasInProgress,
+    canStartNew,
+    canAttempt: canStartNew || hasInProgress,
   };
 }
 

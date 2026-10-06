@@ -130,6 +130,7 @@ export function EquationPractice({ initialSessions }: EquationPracticeProps) {
       return;
     }
 
+    const isLastQuestion = index + 1 >= equations.length;
     setError(null);
     startTransition(async () => {
       const response = await fetch("/api/student/equation-practice/attempt", {
@@ -154,6 +155,18 @@ export function EquationPractice({ initialSessions }: EquationPracticeProps) {
 
       setResult(payload.result);
       await reloadSessions();
+
+      // Last question answered: mark session completed so status does not linger as IN_PROGRESS.
+      if (isLastQuestion) {
+        const completeResponse = await fetch("/api/student/equation-practice/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        if (completeResponse.ok) {
+          await reloadSessions();
+        }
+      }
     });
   }
 
@@ -161,6 +174,7 @@ export function EquationPractice({ initialSessions }: EquationPracticeProps) {
     setResult(null);
     setAnswer("");
     if (index + 1 >= equations.length) {
+      // Safety net if last-answer auto-complete failed; no-op when already COMPLETED.
       finishPractice();
       return;
     }
@@ -172,12 +186,20 @@ export function EquationPractice({ initialSessions }: EquationPracticeProps) {
       return;
     }
 
+    const closingSessionId = sessionId;
+    setError(null);
     startTransition(async () => {
-      await fetch("/api/student/equation-practice/complete", {
+      const response = await fetch("/api/student/equation-practice/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId: closingSessionId }),
       });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setError(payload?.error ?? "Unable to complete practice session.");
+        return;
+      }
+
       setSessionId(null);
       setEquations([]);
       setIndex(0);
@@ -325,7 +347,17 @@ export function EquationPractice({ initialSessions }: EquationPracticeProps) {
                   <td className="px-2 py-2">{formatDateTime(session.startedAt)}</td>
                   <td className="px-2 py-2">{session.topic ?? "General"}</td>
                   <td className="px-2 py-2">
-                    <Chip tone={session.status === "COMPLETED" ? "success" : "warning"}>{session.status}</Chip>
+                    <Chip
+                      tone={
+                        session.status === "COMPLETED" ? "success" : session.status === "ABANDONED" ? "neutral" : "warning"
+                      }
+                    >
+                      {session.status === "IN_PROGRESS"
+                        ? "In progress"
+                        : session.status === "COMPLETED"
+                          ? "Completed"
+                          : "Abandoned"}
+                    </Chip>
                   </td>
                   <td className="px-2 py-2">{session.totalAttempts}</td>
                   <td className="px-2 py-2">{session.correctAttempts}</td>

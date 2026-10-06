@@ -5,6 +5,7 @@ import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { Chip } from "@/components/ui/chip";
 import { extractApiErrorMessage } from "@/lib/api-error";
+import { OfflineAiBusyBanner, offlineAiJobBusyPhase } from "@/components/teacher/offline-ai-generation-status";
 import { formatDateTime } from "@/lib/date-display";
 
 type LessonGenerationJob = {
@@ -14,7 +15,31 @@ type LessonGenerationJob = {
   queuedAt: string;
   completedAt: string | null;
   errorMessage: string | null;
+  generatedLesson?: Record<string, unknown> | null;
 };
+
+function FailedLessonDraftDetails({ job }: { job: LessonGenerationJob }) {
+  const draft = job.generatedLesson;
+  if (!draft || job.status !== "FAILED") {
+    return job.errorMessage ? <span>{job.errorMessage}</span> : <span>—</span>;
+  }
+
+  const title = typeof draft.title === "string" ? draft.title : "Untitled draft";
+
+  return (
+    <div className="space-y-2">
+      {job.errorMessage ? <p className="text-[var(--danger-700)]">{job.errorMessage}</p> : null}
+      <details className="rounded-lg border border-[var(--line-200)] bg-[var(--line-100)] px-2 py-1.5">
+        <summary className="cursor-pointer text-xs font-semibold text-[var(--brand-700)]">
+          View rejected draft JSON ({title})
+        </summary>
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs text-[var(--ink-700)]">
+          {JSON.stringify(draft, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
 
 type BackgroundJobsResponse = {
   jobs?: LessonGenerationJob[];
@@ -167,7 +192,18 @@ export function SubjectBackgroundJobsPanel({ subjectId, sectionId, initialJobs }
                       <span className="text-[var(--ink-500)]">No lesson created</span>
                     )}
                   </td>
-                  <td className="px-2 py-2 text-[var(--ink-700)]">{job.errorMessage || "—"}</td>
+                  <td className="px-2 py-2 text-[var(--ink-700)]">
+                    {(() => {
+                      const busyPhase = offlineAiJobBusyPhase(job.status);
+                      if (busyPhase) {
+                        return <OfflineAiBusyBanner phase={busyPhase} className="max-w-md" />;
+                      }
+                      if (job.status === "FAILED" && job.generatedLesson) {
+                        return <FailedLessonDraftDetails job={job} />;
+                      }
+                      return job.errorMessage || "—";
+                    })()}
+                  </td>
                 </tr>
               ))}
             </tbody>

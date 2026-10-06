@@ -101,6 +101,10 @@ export const lessonPracticeConversationSchema = z.object({
   lessonId: z.string().min(1),
 });
 
+export const lessonPracticeStartSessionSchema = z.object({
+  lessonId: z.string().min(1),
+});
+
 export const lessonPracticeConversationSelectSchema = z.object({
   lessonId: z.string().min(1),
   conversationId: z.string().min(1).max(120),

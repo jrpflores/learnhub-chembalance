@@ -1,4 +1,10 @@
 import { env } from "@/lib/env";
+import { ollamaGenerateText } from "@/server/services/ollama-client";
+
+export type LessonPracticeAiResult = {
+  contentMarkdown: string;
+  isFallback: boolean;
+};
 
 type PracticeHistoryMessage = {
   role: "STUDENT" | "ASSISTANT";
@@ -422,13 +428,21 @@ ${payload.question}
 `.trim();
 }
 
+function toPracticeDisplayDraft(rawAssistantContent: string, question: string, allowContinuation: boolean) {
+  return pruneOffTopicContinuation({
+    content: sanitizeAssistantMarkdown(rawAssistantContent),
+    question,
+    allowContinuation,
+  });
+}
+
 export async function generateLessonPracticeReply(payload: {
   lesson: LessonPracticeContext;
   history: PracticeHistoryMessage[];
   question: string;
   signal?: AbortSignal;
-  onChunk?: (chunk: string) => void;
-}) {
+  onChunk?: (displayDraft: string) => void;
+}): Promise<LessonPracticeAiResult> {
   if (payload.signal?.aborted) {
     const aborted = new Error("Request aborted");
     aborted.name = "AbortError";
@@ -440,13 +454,13 @@ export async function generateLessonPracticeReply(payload: {
   if (!question) {
     const fallback = fallbackResponse({ lesson: payload.lesson, question: "(empty question)", reason: "empty question" });
     payload.onChunk?.(fallback);
-    return fallback;
+    return { contentMarkdown: fallback, isFallback: true };
   }
 
   if (!env.offlineAiEnabled) {
     const fallback = fallbackResponse({ lesson: payload.lesson, question, reason: "AI disabled" });
     payload.onChunk?.(fallback);
-    return fallback;
+    return { contentMarkdown: fallback, isFallback: true };
   }
 
   const prompt = buildPrompt({
@@ -455,128 +469,139 @@ export async function generateLessonPracticeReply(payload: {
     question,
   });
 
-  const candidateModels = [env.ollamaModel, ...env.ollamaFallbackModels].filter(
-    (model, index, list) => Boolean(model) && list.indexOf(model) === index,
-  );
-
-  let lastReason = "no model response";
-
-  for (const model of candidateModels) {
-    const controller = new AbortController();
-    const abortHandler = () => controller.abort();
-    if (payload.signal) {
-      payload.signal.addEventListener("abort", abortHandler, { once: true });
+  let rawAssistantContent = "";
+  try {
+    rawAssistantContent = await ollamaGenerateText({
+      prompt,
+      stream: Boolean(payload.onChunk),
+      signal: payload.signal,
+      temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.35),
+      onChunk: payload.onChunk
+        ? (chunk) => {
+            rawAssistantContent += chunk;
+            const displayDraft = toPracticeDisplayDraft(rawAssistantContent, question, allowContinuation);
+            if (displayDraft) {
+              payload.onChunk?.(displayDraft);
+            }
+          }
+        : undefined,
+    });
+  } catch (error) {
+    if (payload.signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
     }
-    const timeout = setTimeout(() => controller.abort(), env.ollamaTimeoutMs);
-
-    try {
-      const response = await fetch(`${env.ollamaBaseUrl.replace(/\/$/, "")}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          prompt,
-          stream: Boolean(payload.onChunk),
-          options: {
-            temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.35),
-          },
-        }),
-        signal: controller.signal,
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        const detail = await response.text();
-        lastReason = `${model} returned ${response.status}${detail ? ` ${detail.slice(0, 120)}` : ""}`;
-        continue;
-      }
-
-      let rawAssistantContent = "";
-      if (payload.onChunk && response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line) {
-              continue;
-            }
-            try {
-              const frame = JSON.parse(line) as { response?: unknown };
-              const chunk = typeof frame.response === "string" ? frame.response : "";
-              if (chunk.length > 0) {
-                rawAssistantContent += chunk;
-                payload.onChunk(chunk);
-              }
-            } catch {
-              // Ignore malformed stream frames and continue reading.
-            }
-          }
-        }
-
-        if (buffer.trim().length > 0) {
-          try {
-            const frame = JSON.parse(buffer.trim()) as { response?: unknown };
-            const chunk = typeof frame.response === "string" ? frame.response : "";
-            if (chunk.length > 0) {
-              rawAssistantContent += chunk;
-              payload.onChunk(chunk);
-            }
-          } catch {
-            // Ignore malformed trailing frame.
-          }
-        }
-      } else {
-        const payloadJson = (await response.json()) as { response?: string };
-        rawAssistantContent = payloadJson.response ?? "";
-      }
-
-      const assistantContent = pruneOffTopicContinuation({
-        content: sanitizeAssistantMarkdown(rawAssistantContent),
-        question,
-        allowContinuation,
-      });
-      if (!assistantContent) {
-        lastReason = `${model} returned empty content`;
-        continue;
-      }
-
-      return assistantContent;
-    } catch (error) {
-      if (payload.signal?.aborted) {
-        const aborted = new Error("Request aborted");
-        aborted.name = "AbortError";
-        throw aborted;
-      }
-      if (error instanceof Error && error.name === "AbortError") {
-        lastReason = `${model} timed out`;
-      } else {
-        lastReason = error instanceof Error ? error.message : `${model} request failed`;
-      }
-    } finally {
-      if (payload.signal) {
-        payload.signal.removeEventListener("abort", abortHandler);
-      }
-      clearTimeout(timeout);
-    }
+    const fallback = fallbackResponse({
+      lesson: payload.lesson,
+      question,
+      reason: error instanceof Error ? error.message : "no model response",
+    });
+    payload.onChunk?.(fallback);
+    return { contentMarkdown: fallback, isFallback: true };
   }
 
-  const fallback = fallbackResponse({
-    lesson: payload.lesson,
-    question,
-    reason: lastReason,
+  const assistantContent = toPracticeDisplayDraft(rawAssistantContent, question, allowContinuation);
+  if (!assistantContent) {
+    const fallback = fallbackResponse({ lesson: payload.lesson, question, reason: "empty model response" });
+    payload.onChunk?.(fallback);
+    return { contentMarkdown: fallback, isFallback: true };
+  }
+
+  payload.onChunk?.(assistantContent);
+  return { contentMarkdown: assistantContent, isFallback: false };
+}
+
+function buildOpeningQuestionPrompt(lesson: LessonPracticeContext) {
+  const lessonContext = buildRelevantLessonContext({
+    lesson,
+    question: `${lesson.title} ${lesson.topic} practice question`,
+    history: [],
   });
-  payload.onChunk?.(fallback);
-  return fallback;
+
+  return `
+You are an offline lesson tutor starting a practice session for a junior-high student.
+
+Rules:
+- Ask ONE clear practice question based only on the lesson excerpts below.
+- The question should check understanding (short answer / explain / apply), not trivia.
+- Do NOT answer the question yourself.
+- Do NOT include an answer key, hints that give away the answer, or multiple questions.
+- Keep tone supportive and classroom-appropriate.
+- Use Markdown.
+- For math/science symbols, use markdown math notation ($...$ / $$...$$).
+- Never output HTML tags.
+
+Start with a one-sentence greeting that names the lesson, then ask the question.
+
+Lesson title: ${lesson.title}
+Subject: ${lesson.subject}
+Topic: ${lesson.topic}
+Lesson summary: ${lesson.shortDescription}
+
+Relevant lesson excerpts:
+${lessonContext}
+`.trim();
+}
+
+function openingQuestionFallback(lesson: LessonPracticeContext) {
+  return `Welcome to practice for **${lesson.title}** (${lesson.subject} · ${lesson.topic}).
+
+Based on this lesson, explain the main idea in your own words, then give one example from the material.`;
+}
+
+export async function generateLessonPracticeOpeningQuestion(payload: {
+  lesson: LessonPracticeContext;
+  signal?: AbortSignal;
+  onChunk?: (displayDraft: string) => void;
+}): Promise<LessonPracticeAiResult> {
+  if (payload.signal?.aborted) {
+    const aborted = new Error("Request aborted");
+    aborted.name = "AbortError";
+    throw aborted;
+  }
+
+  if (!env.offlineAiEnabled) {
+    const fallback = openingQuestionFallback(payload.lesson);
+    payload.onChunk?.(fallback);
+    return { contentMarkdown: fallback, isFallback: true };
+  }
+
+  const prompt = buildOpeningQuestionPrompt(payload.lesson);
+  let rawAssistantContent = "";
+
+  try {
+    rawAssistantContent = await ollamaGenerateText({
+      prompt,
+      stream: Boolean(payload.onChunk),
+      signal: payload.signal,
+      temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
+      onChunk: payload.onChunk
+        ? (chunk) => {
+            rawAssistantContent += chunk;
+            const displayDraft = sanitizeAssistantMarkdown(rawAssistantContent);
+            if (displayDraft) {
+              payload.onChunk?.(displayDraft);
+            }
+          }
+        : undefined,
+    });
+  } catch (error) {
+    if (payload.signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
+    }
+    const fallback = `${openingQuestionFallback(payload.lesson)}\n\n_(Offline AI unavailable: ${
+      error instanceof Error ? error.message : "no model response"
+    })_`;
+    payload.onChunk?.(fallback);
+    return { contentMarkdown: fallback, isFallback: true };
+  }
+
+  const assistantContent = sanitizeAssistantMarkdown(rawAssistantContent);
+  if (!assistantContent) {
+    const fallback = openingQuestionFallback(payload.lesson);
+    payload.onChunk?.(fallback);
+    return { contentMarkdown: fallback, isFallback: true };
+  }
+
+  payload.onChunk?.(assistantContent);
+  return { contentMarkdown: assistantContent, isFallback: false };
 }

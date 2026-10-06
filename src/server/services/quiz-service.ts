@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
+import { env } from "@/lib/env";
 import { getDb } from "@/lib/db";
+import { gradeShortAnswerWithOfflineAi } from "@/server/services/ai-short-answer-grading";
+import { canStudentAccessLesson } from "@/server/queries/lessons";
 import {
+  canStudentAccessQuiz,
   canTeacherAccessQuiz,
+  completeAiGradingJob,
   createAiGradingJob,
   createAttempt,
   createXpEvent,
@@ -11,6 +16,7 @@ import {
   getAttemptById,
   getNextAttemptNumber,
   getQuestionForGrading,
+  getInProgressAttempt,
   getQuizAttemptUsage,
   getQuizById,
   getQuizForAttemptStart,
@@ -160,6 +166,65 @@ function deterministicShortAnswerGrade(payload: {
   return { isFinal: false as const };
 }
 
+async function gradeShortAnswerWithAiMode(payload: {
+  answerId: string;
+  question: NonNullable<ReturnType<typeof getQuestionForGrading>>;
+  studentAnswer: string;
+  maxPoints: number;
+  pendingFeedback: string;
+  requestPayload: Record<string, unknown>;
+}): Promise<
+  { status: "queued" } | { status: "graded"; isCorrect: boolean; earnedPoints: number }
+> {
+  if (env.aiGradingMode === "queue") {
+    createAiGradingJob({
+      attemptAnswerId: payload.answerId,
+      requestPayload: payload.requestPayload,
+    });
+    markAttemptAnswerPendingAi({
+      answerId: payload.answerId,
+      feedback: payload.pendingFeedback,
+    });
+    return { status: "queued" };
+  }
+
+  const applied = await gradeShortAnswerWithOfflineAi({
+    prompt: payload.question.promptMarkdown,
+    studentAnswer: payload.studentAnswer,
+    referenceAnswer: payload.question.referenceAnswer,
+    keywords: payload.question.gradingKeywords,
+    maxPoints: payload.maxPoints,
+    rubric: payload.question.explanationMarkdown,
+    explanationMarkdown: payload.question.explanationMarkdown,
+  });
+
+  markAttemptAnswerGraded({
+    answerId: payload.answerId,
+    isCorrect: applied.isCorrect,
+    earnedPoints: applied.earnedPoints,
+    feedback: applied.feedback,
+    gradedByAi: applied.gradedByAi,
+  });
+
+  createAiGradingJob({
+    attemptAnswerId: payload.answerId,
+    requestPayload: payload.requestPayload,
+  });
+  completeAiGradingJob({
+    attemptAnswerId: payload.answerId,
+    status: "COMPLETED",
+    score: applied.normalizedScore,
+    feedback: applied.feedback,
+    responsePayload: applied.responsePayload,
+  });
+
+  return {
+    status: "graded",
+    isCorrect: applied.isCorrect,
+    earnedPoints: applied.earnedPoints,
+  };
+}
+
 function nowWithinWindow(availableFrom: string | null, availableUntil: string | null) {
   const now = Date.now();
   if (availableFrom && now < new Date(availableFrom).getTime()) {
@@ -268,21 +333,28 @@ function applyPostGradingEffects(payload: {
     return;
   }
 
+  // Only recommend lessons the student can open (section-targeted + enrolled).
   const nextLesson = db
     .prepare<{
       id: string;
       title: string;
     }>(
-      `SELECT id, title
-       FROM lessons
-       WHERE status = 'PUBLISHED'
-         AND id NOT IN (
+      `SELECT l.id, l.title
+       FROM lessons l
+       JOIN lesson_sections ls ON ls.lesson_id = l.id
+       JOIN section_students ss ON ss.section_id = ls.section_id
+       JOIN sections sec ON sec.id = ss.section_id
+       WHERE l.status = 'PUBLISHED'
+         AND ss.student_id = ?
+         AND ss.is_active = 1
+         AND sec.status = 'ACTIVE'
+         AND l.id NOT IN (
            SELECT lesson_id FROM lesson_progress WHERE student_id = ? AND status = 'COMPLETED'
          )
-       ORDER BY published_at DESC
+       ORDER BY l.published_at DESC
        LIMIT 1`,
     )
-    .get(payload.studentId);
+    .get(payload.studentId, payload.studentId);
 
   if (nextLesson) {
     upsertRecommendation({
@@ -402,32 +474,43 @@ export function startQuizAttempt(studentId: string, quizId: string) {
     throw new Error("Quiz is not currently available");
   }
 
+  // Resume an open attempt instead of burning another slot against max_attempts.
+  const inProgress = getInProgressAttempt(quizId, studentId);
   const usage = getQuizAttemptUsage(quizId, studentId);
-  if (!usage.unlimited && (usage.remaining ?? 0) <= 0) {
+  if (!inProgress && !usage.canStartNew) {
     throw new Error("No attempts remaining for this quiz");
   }
 
-  const attemptId = createAttempt({
-    quizId,
-    studentId,
-    attemptNumber: getNextAttemptNumber(quizId, studentId),
-  });
+  const attemptId =
+    inProgress?.id ??
+    createAttempt({
+      quizId,
+      studentId,
+      attemptNumber: getNextAttemptNumber(quizId, studentId),
+    });
 
   const fullQuiz = getQuizById(quizId);
   if (!fullQuiz) {
     throw new Error("Quiz not found after attempt creation");
   }
 
-  const questions = fullQuiz.randomizeQuestions ? shuffleArray(fullQuiz.questions) : fullQuiz.questions;
+  // Keep existing answer order stable when resuming; only shuffle for brand-new attempts.
+  const questions = inProgress
+    ? fullQuiz.questions
+    : fullQuiz.randomizeQuestions
+      ? shuffleArray(fullQuiz.questions)
+      : fullQuiz.questions;
 
   const preparedQuestions = questions.map((question, index) => ({
     ...question,
     position: index + 1,
-    options: fullQuiz.randomizeOptions ? shuffleArray(question.options) : question.options,
+    options:
+      inProgress || !fullQuiz.randomizeOptions ? question.options : shuffleArray(question.options),
   }));
 
   return {
     attemptId,
+    resumed: Boolean(inProgress),
     quiz: {
       id: fullQuiz.id,
       title: fullQuiz.title,
@@ -590,8 +673,12 @@ export async function submitQuizAttempt(payload: {
         continue;
       }
 
-      createAiGradingJob({
-        attemptAnswerId: answer.id,
+      const aiMode = await gradeShortAnswerWithAiMode({
+        answerId: answer.id,
+        question,
+        studentAnswer,
+        maxPoints: answer.maxPoints,
+        pendingFeedback: "Submitted. Offline AI is checking this short answer.",
         requestPayload: {
           questionId: question.id,
           promptMarkdown: question.promptMarkdown,
@@ -601,11 +688,18 @@ export async function submitQuizAttempt(payload: {
         },
       });
 
-      markAttemptAnswerPendingAi({
-        answerId: answer.id,
-        feedback: "Submitted. Offline AI is checking this short answer.",
-      });
-      queuedAiAnswerCount += 1;
+      if (aiMode.status === "queued") {
+        queuedAiAnswerCount += 1;
+        continue;
+      }
+
+      totalEarnedPoints += aiMode.earnedPoints;
+      const isCorrect = aiMode.isCorrect;
+      if (isCorrect) {
+        correctCount += 1;
+      } else {
+        wrongCount += 1;
+      }
       continue;
     }
 
@@ -722,7 +816,7 @@ export function finalizeSubmittedAttemptIfReady(attemptId: string) {
   return getAttemptById(attemptId);
 }
 
-export function recheckShortAnswersByStudent(payload: {
+export async function recheckShortAnswersByStudent(payload: {
   studentId: string;
   attemptId: string;
 }) {
@@ -744,6 +838,7 @@ export function recheckShortAnswersByStudent(payload: {
     throw new Error("Short-answer recheck is already in progress.");
   }
 
+  let processedCount = 0;
   let queuedCount = 0;
 
   for (const answer of shortAnswers) {
@@ -764,8 +859,12 @@ export function recheckShortAnswersByStudent(payload: {
       continue;
     }
 
-    createAiGradingJob({
-      attemptAnswerId: answer.id,
+    const aiMode = await gradeShortAnswerWithAiMode({
+      answerId: answer.id,
+      question,
+      studentAnswer,
+      maxPoints: answer.maxPoints,
+      pendingFeedback: "Recheck requested. Offline AI is re-evaluating this short answer.",
       requestPayload: {
         questionId: question.id,
         promptMarkdown: question.promptMarkdown,
@@ -775,22 +874,24 @@ export function recheckShortAnswersByStudent(payload: {
         recheckRequestedByStudent: payload.studentId,
       },
     });
-
-    markAttemptAnswerPendingAi({
-      answerId: answer.id,
-      feedback: "Recheck requested. Offline AI is re-evaluating this short answer.",
-    });
-    queuedCount += 1;
+    processedCount += 1;
+    if (aiMode.status === "queued") {
+      queuedCount += 1;
+    }
   }
 
-  if (queuedCount === 0) {
+  if (processedCount === 0) {
     throw new Error("No short-answer responses available for recheck.");
   }
 
-  markAttemptSubmitted({
-    attemptId: payload.attemptId,
-    timeSpentSec: Math.max(1, attempt.timeSpentSec ?? 1),
-  });
+  if (queuedCount === 0) {
+    finalizeSubmittedAttemptIfReady(payload.attemptId);
+  } else {
+    markAttemptSubmitted({
+      attemptId: payload.attemptId,
+      timeSpentSec: Math.max(1, attempt.timeSpentSec ?? 1),
+    });
+  }
 
   const refreshed = getAttemptById(payload.attemptId);
   if (!refreshed || refreshed.studentId !== payload.studentId) {
@@ -934,19 +1035,30 @@ export function getStudentRecommendations(studentId: string) {
        FROM recommendations
        WHERE student_id = ? AND is_dismissed = 0
        ORDER BY priority DESC, created_at DESC
-       LIMIT 5`,
+       LIMIT 12`,
     )
     .all(studentId)
-    .map((row) => ({
-      id: row.id,
-      type: row.type,
-      title: row.title,
-      description: row.description,
-      lessonId: row.lesson_id,
-      quizId: row.quiz_id,
-      topic: row.topic,
-      priority: row.priority,
-    }));
+    .map((row) => {
+      // Drop stale targets from prior section enrollments so CTAs never 404.
+      const lessonId =
+        row.lesson_id && canStudentAccessLesson(studentId, row.lesson_id) ? row.lesson_id : undefined;
+      const quizId = row.quiz_id && canStudentAccessQuiz(studentId, row.quiz_id) ? row.quiz_id : undefined;
+
+      return {
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        description: row.description,
+        lessonId,
+        quizId,
+        topic: row.topic,
+        priority: row.priority,
+        hasAction: Boolean(lessonId || quizId),
+      };
+    })
+    .filter((row) => row.hasAction)
+    .slice(0, 5)
+    .map(({ hasAction: _hasAction, ...row }) => row);
 }
 
 export function dismissRecommendation(studentId: string, recommendationId: string) {

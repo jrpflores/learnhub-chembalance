@@ -613,8 +613,8 @@ export function LessonDetailTabs({
             <Link href="/student/quizzes" className={studentSecondaryLinkClassName("h-9")}>
               All Quizzes
             </Link>
-            <Link href="/student/practice/equations" className={studentSecondaryLinkClassName("h-9")}>
-              Equation Practice
+            <Link href="/student/practice" className={studentSecondaryLinkClassName("h-9")}>
+              Practice Hub
             </Link>
           </>
         }

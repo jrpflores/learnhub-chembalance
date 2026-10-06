@@ -7,6 +7,8 @@ import { z } from "zod";
 import {
   createUser,
   deleteUserById,
+  getUserByEmail,
+  getUserById,
   listUsers,
   updateUser,
 } from "@/server/queries/users";
@@ -49,17 +51,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
+  const email = parsed.data.email.trim().toLowerCase();
+  if (getUserByEmail(email)) {
+    return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+  }
+
   const passwordHash = await hashPassword(parsed.data.password);
   const userId = crypto.randomUUID();
 
-  createUser({
-    id: userId,
-    email: parsed.data.email,
-    fullName: parsed.data.fullName,
-    role: parsed.data.role,
-    passwordHash,
-    createdById: auth.user?.id,
-  });
+  try {
+    createUser({
+      id: userId,
+      email,
+      fullName: parsed.data.fullName.trim(),
+      role: parsed.data.role,
+      passwordHash,
+      createdById: auth.user?.id,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("UNIQUE constraint failed: users.email")) {
+      return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+    }
+    throw error;
+  }
 
   return NextResponse.json({ success: true, userId });
 }
@@ -77,13 +92,33 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid payload", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  updateUser({
-    id: parsed.data.id,
-    fullName: parsed.data.fullName,
-    email: parsed.data.email,
-    role: parsed.data.role,
-    isActive: parsed.data.isActive,
-  });
+  if (parsed.data.email !== undefined) {
+    const email = parsed.data.email.trim().toLowerCase();
+    const existing = getUserByEmail(email);
+    if (existing && existing.id !== parsed.data.id) {
+      return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+    }
+  }
+
+  if (!getUserById(parsed.data.id)) {
+    return NextResponse.json({ error: "User not found." }, { status: 404 });
+  }
+
+  try {
+    updateUser({
+      id: parsed.data.id,
+      fullName: parsed.data.fullName?.trim(),
+      email: parsed.data.email?.trim().toLowerCase(),
+      role: parsed.data.role,
+      isActive: parsed.data.isActive,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("UNIQUE constraint failed: users.email")) {
+      return NextResponse.json({ error: "A user with this email already exists." }, { status: 409 });
+    }
+    throw error;
+  }
 
   return NextResponse.json({ success: true });
 }

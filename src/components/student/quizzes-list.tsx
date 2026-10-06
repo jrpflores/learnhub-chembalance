@@ -18,6 +18,7 @@ type QuizItem = {
   maxAttempts: number;
   questionCount: number;
   attemptsUsed: number;
+  hasInProgress?: boolean;
   latestOutcome: string | null;
   canAttempt: boolean;
 };
@@ -49,7 +50,7 @@ function AttemptButton({ quiz }: { quiz: QuizItem }) {
   if (quiz.canAttempt) {
     return (
       <Link href={`/student/quizzes/${quiz.id}`} className={studentPrimaryLinkClassName()}>
-        Take Quiz
+        {quiz.hasInProgress ? "Continue Quiz" : "Take Quiz"}
       </Link>
     );
   }
@@ -59,6 +60,16 @@ function AttemptButton({ quiz }: { quiz: QuizItem }) {
       No Attempts Left
     </span>
   );
+}
+
+function attemptsLabel(quiz: QuizItem) {
+  if (quiz.maxAttempts <= 0) {
+    return quiz.hasInProgress ? `${quiz.attemptsUsed}/Unlimited · In progress` : `${quiz.attemptsUsed}/Unlimited`;
+  }
+  if (quiz.hasInProgress) {
+    return `${quiz.attemptsUsed}/${quiz.maxAttempts} · In progress`;
+  }
+  return `${quiz.attemptsUsed}/${quiz.maxAttempts}`;
 }
 
 export function StudentQuizzesList({ quizzes }: StudentQuizzesListProps) {
@@ -118,7 +129,7 @@ export function StudentQuizzesList({ quizzes }: StudentQuizzesListProps) {
                       {quiz.passingScore}%{quiz.timeLimitSec ? ` • ${Math.round(quiz.timeLimitSec / 60)} min` : " • No limit"}
                     </td>
                     <td className="px-2 py-2 text-[var(--ink-700)]">
-                      {quiz.maxAttempts <= 0 ? `${quiz.attemptsUsed}/Unlimited` : `${quiz.attemptsUsed}/${quiz.maxAttempts}`}
+                      {attemptsLabel(quiz)}
                     </td>
                     <td className="px-2 py-2">
                       <Chip tone={outcomeTone(quiz.latestOutcome)}>{outcomeLabel(quiz.latestOutcome)}</Chip>
@@ -146,9 +157,7 @@ export function StudentQuizzesList({ quizzes }: StudentQuizzesListProps) {
                   {quiz.questionCount} questions • Pass {quiz.passingScore}%
                   {quiz.timeLimitSec ? ` • ${Math.round(quiz.timeLimitSec / 60)} min` : ""}
                 </p>
-                <p className="mt-1 text-xs text-[var(--ink-500)]">
-                  Attempts: {quiz.maxAttempts <= 0 ? `${quiz.attemptsUsed}/Unlimited` : `${quiz.attemptsUsed}/${quiz.maxAttempts}`}
-                </p>
+                <p className="mt-1 text-xs text-[var(--ink-500)]">Attempts: {attemptsLabel(quiz)}</p>
               </div>
 
               <div className="mt-4 flex items-center justify-between gap-3">

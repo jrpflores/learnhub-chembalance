@@ -374,7 +374,7 @@ function iconForItem(item: NavItem): LucideIcon {
   if (item.href.endsWith("/lessons")) return BookOpen;
   if (item.href.endsWith("/equations")) return FlaskConical;
   if (item.href.endsWith("/quizzes")) return FileQuestion;
-  if (item.href.endsWith("/practice/equations")) return FlaskConical;
+  if (item.href.endsWith("/practice") || item.href.endsWith("/practice/equations")) return FlaskConical;
   if (item.href.endsWith("/analytics")) return BarChart3;
   if (item.href.endsWith("/settings")) return Settings;
   if (item.href.endsWith("/results")) return Trophy;

@@ -69,7 +69,9 @@ export function studentDashboardData(studentId: string) {
 
   const recentQuizzes = listStudentAttempts(studentId).slice(0, 5);
 
-  const topRecommended = recommendations[0] ?? null;
+  // Prefer a recommendation that still has an openable lesson/quiz target.
+  const topRecommended =
+    recommendations.find((item) => Boolean(item.lessonId || item.quizId)) ?? recommendations[0] ?? null;
 
   return {
     cards: {

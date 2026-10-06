@@ -27,7 +27,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
     }
 
-    const refreshed = recheckShortAnswersByStudent({
+    const refreshed = await recheckShortAnswersByStudent({
       studentId: auth.user.id,
       attemptId: parsed.data.attemptId,
     });
@@ -35,7 +35,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       success: true,
       processing: refreshed.status === "SUBMITTED",
-      message: "Short-answer responses were queued for AI recheck.",
+      message:
+        refreshed.status === "SUBMITTED"
+          ? "Short-answer responses were queued for AI recheck."
+          : "Short-answer recheck completed.",
       attempt: refreshed,
     });
   } catch (error) {

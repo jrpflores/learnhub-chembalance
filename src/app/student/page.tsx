@@ -15,7 +15,7 @@ const quickLinks = [
   { href: "/student/subjects", label: "Subjects", hint: "Browse assigned courses", icon: GraduationCap },
   { href: "/student/lessons", label: "Lessons", hint: "Continue learning", icon: BookOpen },
   { href: "/student/quizzes", label: "Quizzes", hint: "Check understanding", icon: FileQuestion },
-  { href: "/student/practice/equations", label: "Practice", hint: "Balance equations", icon: FlaskConical },
+  { href: "/student/practice", label: "Practice", hint: "AI lesson practice", icon: FlaskConical },
   { href: "/student/results", label: "Results", hint: "Review attempts", icon: Trophy },
 ] as const;
 
@@ -51,12 +51,12 @@ export default async function StudentDashboardPage() {
             <p className="mt-1 text-sm text-white/90">{data.recommendedNext.description}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {data.recommendedNext.lessonId ? (
-                <Link href={`/student/lessons/${data.recommendedNext.lessonId}`} className={studentPrimaryLinkClassName("!bg-white !text-[var(--brand-700)] hover:!bg-white/90")}>
+                <Link href={`/student/lessons/${data.recommendedNext.lessonId}`} className="student-hero-cta-primary">
                   Continue Lesson
                 </Link>
               ) : null}
               {data.recommendedNext.quizId ? (
-                <Link href={`/student/quizzes/${data.recommendedNext.quizId}`} className={studentSecondaryLinkClassName("border-white/60 bg-transparent text-white hover:bg-white/10")}>
+                <Link href={`/student/quizzes/${data.recommendedNext.quizId}`} className="student-hero-cta-secondary">
                   Take Quiz
                 </Link>
               ) : null}
@@ -64,10 +64,10 @@ export default async function StudentDashboardPage() {
           </div>
         ) : (
           <div className="mt-5 flex flex-wrap gap-2">
-            <Link href="/student/lessons" className={studentPrimaryLinkClassName("!bg-white !text-[var(--brand-700)] hover:!bg-white/90")}>
+            <Link href="/student/lessons" className="student-hero-cta-primary">
               Browse Lessons
             </Link>
-            <Link href="/student/quizzes" className={studentSecondaryLinkClassName("border-white/60 bg-transparent text-white hover:bg-white/10")}>
+            <Link href="/student/quizzes" className="student-hero-cta-secondary">
               Browse Quizzes
             </Link>
           </div>

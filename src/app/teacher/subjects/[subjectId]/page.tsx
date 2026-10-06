@@ -536,7 +536,15 @@ export default async function TeacherSubjectDetailPage({ params, searchParams }:
             <SubjectBackgroundJobsPanel
               subjectId={context.subject.id}
               sectionId={activeSection?.id ?? ""}
-              initialJobs={lessonGenerationJobs}
+              initialJobs={lessonGenerationJobs.map((job) => ({
+                id: job.id,
+                status: job.status,
+                createdLessonId: job.createdLessonId,
+                queuedAt: job.queuedAt,
+                completedAt: job.completedAt,
+                errorMessage: job.errorMessage,
+                generatedLesson: job.generatedLesson,
+              }))}
             />
           ) : null}
 

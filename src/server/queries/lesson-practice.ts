@@ -279,6 +279,67 @@ export function listLessonPracticeConversations(payload: {
   });
 }
 
+export function listStudentPracticeHistory(payload: { studentId: string; limit?: number }) {
+  const db = getDb();
+  ensureLessonPracticeTable();
+  const limit = Math.max(1, Math.min(payload.limit ?? 40, 100));
+
+  const rows = db
+    .prepare<
+      (LessonPracticeConversationRow & {
+        lesson_title: string;
+        lesson_subject: string;
+        lesson_topic: string;
+      })[]
+    >(
+      `SELECT
+         lpc.id,
+         lpc.lesson_id,
+         lpc.student_id,
+         lpc.is_active,
+         lpc.created_at,
+         lpc.updated_at,
+         lpc.last_message_at,
+         COALESCE(stats.message_count, 0) AS message_count,
+         stats.last_message_markdown,
+         l.title AS lesson_title,
+         l.subject AS lesson_subject,
+         l.topic AS lesson_topic
+       FROM lesson_practice_conversations lpc
+       JOIN lessons l ON l.id = lpc.lesson_id
+       LEFT JOIN (
+         SELECT
+           m.conversation_id,
+           COUNT(*) AS message_count,
+           (
+             SELECT m2.content_markdown
+             FROM lesson_practice_messages m2
+             WHERE m2.conversation_id = m.conversation_id
+             ORDER BY m2.created_at DESC
+             LIMIT 1
+           ) AS last_message_markdown
+         FROM lesson_practice_messages m
+         GROUP BY m.conversation_id
+       ) stats ON stats.conversation_id = lpc.id
+       WHERE lpc.student_id = ?
+         AND COALESCE(stats.message_count, 0) > 0
+       ORDER BY COALESCE(lpc.last_message_at, lpc.updated_at) DESC, lpc.created_at DESC
+       LIMIT ?`,
+    )
+    .all(payload.studentId, limit);
+
+  return rows.map((row) => {
+    const mapped = mapLessonPracticeConversation(row);
+    return {
+      ...mapped,
+      lessonTitle: row.lesson_title,
+      lessonSubject: row.lesson_subject,
+      lessonTopic: row.lesson_topic,
+      preview: summarizePreview(mapped.lastMessageMarkdown),
+    };
+  });
+}
+
 export function setActiveLessonPracticeConversation(payload: {
   lessonId: string;
   studentId: string;

@@ -69,6 +69,22 @@ function mapQuizGenerationJob(row: QuizGenerationJobRow) {
   };
 }
 
+export function findActiveQuizGenerationJobForQuiz(quizId: string) {
+  const db = getDb();
+  ensureQuizGenerationJobsTable();
+  const row = db
+    .prepare<{ id: string }>(
+      `SELECT id
+       FROM quiz_generation_jobs
+       WHERE quiz_id = ?
+         AND status IN ('PENDING', 'PROCESSING')
+       ORDER BY queued_at DESC
+       LIMIT 1`,
+    )
+    .get(quizId);
+  return row?.id ?? null;
+}
+
 export function createQuizGenerationJob(payload: {
   teacherId: string;
   lessonId: string;
@@ -78,6 +94,12 @@ export function createQuizGenerationJob(payload: {
 }) {
   const db = getDb();
   ensureQuizGenerationJobsTable();
+
+  const activeJobId = findActiveQuizGenerationJobForQuiz(payload.quizId);
+  if (activeJobId) {
+    return { jobId: null as null, conflictJobId: activeJobId };
+  }
+
   const id = crypto.randomUUID();
 
   db.prepare(
@@ -94,7 +116,7 @@ export function createQuizGenerationJob(payload: {
     new Date().toISOString(),
   );
 
-  return id;
+  return { jobId: id, conflictJobId: null as null };
 }
 
 export function listQuizGenerationJobsByLesson(payload: {

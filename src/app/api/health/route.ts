@@ -3,6 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { getDb } from "@/lib/db";
+import { checkOllamaReachable } from "@/server/services/ollama-client";
 
 function resolvePath(inputPath: string) {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(process.cwd(), inputPath);
@@ -23,6 +24,7 @@ export async function GET() {
     });
 
     let graderHealthy: boolean | null = null;
+    let ollamaHealthy: boolean | null = null;
     if (env.offlineAiEnabled) {
       try {
         const controller = new AbortController();
@@ -37,9 +39,14 @@ export async function GET() {
       } catch {
         graderHealthy = false;
       }
+
+      ollamaHealthy = await checkOllamaReachable(Math.min(env.offlineGraderTimeoutMs, 3000));
     }
 
-    const healthy = dbHealthy && (graderHealthy === null || graderHealthy === true);
+    const healthy =
+      dbHealthy &&
+      (graderHealthy === null || graderHealthy === true) &&
+      (ollamaHealthy === null || ollamaHealthy === true);
 
     return NextResponse.json(
       {
@@ -47,6 +54,7 @@ export async function GET() {
         components: {
           db: dbHealthy,
           offlineAi: graderHealthy,
+          ollama: ollamaHealthy,
         },
         storage: {
           uploadsPath,

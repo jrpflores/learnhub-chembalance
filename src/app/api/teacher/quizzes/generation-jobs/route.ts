@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Quiz not found for this lesson." }, { status: 404 });
   }
 
-  const jobId = createQuizGenerationJob({
+  const created = createQuizGenerationJob({
     teacherId: auth.user.id,
     lessonId,
     quizId,
@@ -70,5 +70,15 @@ export async function POST(request: Request) {
     questionTypes: [...new Set(questionTypes)],
   });
 
-  return NextResponse.json({ success: true, jobId }, { status: 202 });
+  if (!created.jobId) {
+    return NextResponse.json(
+      {
+        error: "A generation job is already queued or running for this quiz.",
+        conflictJobId: created.conflictJobId,
+      },
+      { status: 409 },
+    );
+  }
+
+  return NextResponse.json({ success: true, jobId: created.jobId }, { status: 202 });
 }

@@ -17,6 +17,11 @@ export default async function StudentQuizDetailPage({ params }: { params: Promis
   }
 
   const usage = getQuizAttemptUsage(quizId, user.id);
+  const attemptsLabel = usage.unlimited
+    ? "Attempts: Unlimited"
+    : usage.hasInProgress
+      ? `In progress · ${usage.remaining ?? 0} new left`
+      : `Attempts left: ${usage.remaining ?? 0}`;
 
   return (
     <div className="space-y-4">
@@ -46,9 +51,12 @@ export default async function StudentQuizDetailPage({ params }: { params: Promis
         <div className="flex flex-wrap items-center gap-2">
           <Chip tone="brand">{quiz.lessonTitle ?? "Lesson Quiz"}</Chip>
           <Chip tone="neutral">Pass score: {quiz.passingScore}%</Chip>
-          <Chip tone={usage.unlimited || (usage.remaining ?? 0) > 0 ? "success" : "warning"}>
-            {usage.unlimited ? "Attempts: Unlimited" : `Attempts left: ${usage.remaining ?? 0}`}
-          </Chip>
+          <Chip tone={usage.canAttempt ? "success" : "warning"}>{attemptsLabel}</Chip>
+          {!usage.unlimited ? (
+            <Chip tone="neutral">
+              Limit: {usage.maxAttempts} · Used: {usage.used}
+            </Chip>
+          ) : null}
         </div>
 
         {quiz.instructions ? (
@@ -65,7 +73,7 @@ export default async function StudentQuizDetailPage({ params }: { params: Promis
         </div>
       </Card>
 
-      <StartQuizCard quizId={quizId} canAttempt={usage.unlimited || (usage.remaining ?? 0) > 0} />
+      <StartQuizCard quizId={quizId} canAttempt={usage.canAttempt} hasInProgress={usage.hasInProgress} />
     </div>
   );
 }
