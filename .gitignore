@@ -50,3 +50,6 @@ next-env.d.ts
 /storage/logs/*
 /storage/models/*
 /dev.db
+
+# image archives (GitHub rejects files over 100 MB)
+*.tar
