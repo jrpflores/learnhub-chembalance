@@ -75,7 +75,7 @@ export function QuizAiGenerationPanel({
 }: QuizAiGenerationPanelProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [generationCount, setGenerationCount] = useState("5");
+  const [generationCount, setGenerationCount] = useState("3");
   const [generationTypes, setGenerationTypes] = useState<QuestionType[]>([
     "MULTIPLE_CHOICE",
     "TRUE_FALSE",

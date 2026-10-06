@@ -32,7 +32,7 @@ type LessonsManagerProps = {
   initialLessons: Lesson[];
   initialSubjectOptions: string[];
   selectedSubject: string | null;
-  initialIntent?: "import" | null;
+  initialIntent?: "import" | "create" | null;
   breadcrumbContext?: {
     subjectId: string;
     subjectName: string;
@@ -258,6 +258,18 @@ export function LessonsManager({
     }
     void openImportModal();
   }, [initialIntent, breadcrumbContext?.sectionId, breadcrumbContext?.subjectId, openImportModal]);
+
+  useEffect(() => {
+    if (initialIntent !== "create") {
+      return;
+    }
+    if (subjectOptions.length === 0) {
+      return;
+    }
+    setError(null);
+    setForm(defaultForm(selectedSubject ?? subjectOptions[0] ?? ""));
+    setCreateOpen(true);
+  }, [initialIntent, selectedSubject, subjectOptions]);
 
   function importLesson(lessonId: string) {
     if (!breadcrumbContext?.subjectId || !breadcrumbContext.sectionId) {

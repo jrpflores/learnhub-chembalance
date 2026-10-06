@@ -337,17 +337,15 @@ function buildRelevantLessonContext(input: GenerateQuizFromLessonInput) {
   return merged.length > QUIZ_GEN_MAX_CONTEXT_CHARS ? `${merged.slice(0, QUIZ_GEN_MAX_CONTEXT_CHARS)}...` : merged;
 }
 
-export async function generateQuizFromLesson(input: GenerateQuizFromLessonInput): Promise<GeneratedQuizQuestion[]> {
-  if (!env.offlineAiEnabled) {
-    throw new Error("Offline AI is disabled. Enable OFFLINE_AI_ENABLED to generate quiz questions.");
-  }
-
-  const sanitizedQuestionCount = Math.max(1, Math.min(input.questionCount, MAX_GENERATED_QUESTIONS));
-  const allowedTypes = normalizeRequestedQuestionTypes(input.questionTypes);
-  const allowedTypesText = allowedTypes.join(", ");
-  const lessonContext = buildRelevantLessonContext(input);
-
-  const prompt = `
+function buildQuizGenerationPrompt(payload: {
+  questionCount: number;
+  allowedTypesText: string;
+  lessonTitle: string;
+  lessonSubject: string;
+  lessonTopic: string;
+  lessonContext: string;
+}) {
+  return `
 You are generating junior-high quiz questions.
 Use ONLY the supplied lesson content. Do not invent external facts.
 
@@ -365,28 +363,23 @@ Output strict JSON, no markdown:
 }
 
 Rules:
-- Create exactly ${sanitizedQuestionCount} questions.
-- Allowed question types: ${allowedTypesText}.
+- Create exactly ${payload.questionCount} questions.
+- Allowed question types: ${payload.allowedTypesText}.
 - Age-appropriate language for junior high.
-- Prioritize concept understanding over trick wording.
+- Keep explanations to one short sentence.
 - For multiple choice, provide plausible distractors.
 - Keep statements concise and classroom-ready.
 
-Lesson title: ${input.lessonTitle}
-Subject: ${input.lessonSubject}
-Topic: ${input.lessonTopic}
+Lesson title: ${payload.lessonTitle}
+Subject: ${payload.lessonSubject}
+Topic: ${payload.lessonTopic}
 
 Relevant lesson excerpts (trimmed for context budget):
-${lessonContext}
+${payload.lessonContext}
 `.trim();
+}
 
-  const modelOutput = await ollamaGenerateText({
-    prompt,
-    format: "json",
-    temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
-    numPredict: Math.min(env.ollamaNumPredict, 800 + sanitizedQuestionCount * 420),
-  });
-
+function parseGeneratedQuizBatch(modelOutput: string, allowedTypes: GeneratedQuizQuestionType[], maxCount: number) {
   const rawJson = asJsonObject(modelOutput);
   if (!rawJson) {
     throw new Error("Ollama returned non-JSON quiz content.");
@@ -398,14 +391,86 @@ ${lessonContext}
   }
 
   const rawQuestions = Array.isArray(parsed.data) ? parsed.data : parsed.data.questions;
-  const normalized = rawQuestions
-    .slice(0, sanitizedQuestionCount)
+  return rawQuestions
+    .slice(0, maxCount)
     .map((question) => tryNormalizeGeneratedQuizQuestion(question, allowedTypes))
     .filter((question): question is GeneratedQuizQuestion => question !== null);
+}
 
-  if (normalized.length === 0) {
-    throw new Error("Ollama returned zero valid questions after validation.");
+async function generateQuizBatchFromLesson(payload: {
+  input: GenerateQuizFromLessonInput;
+  questionCount: number;
+  allowedTypes: GeneratedQuizQuestionType[];
+  allowedTypesText: string;
+  lessonContext: string;
+}) {
+  const prompt = buildQuizGenerationPrompt({
+    questionCount: payload.questionCount,
+    allowedTypesText: payload.allowedTypesText,
+    lessonTitle: payload.input.lessonTitle,
+    lessonSubject: payload.input.lessonSubject,
+    lessonTopic: payload.input.lessonTopic,
+    lessonContext: payload.lessonContext,
+  });
+
+  const numPredict = Math.min(env.ollamaNumPredict, 220 + payload.questionCount * 180);
+
+  const modelOutput = await ollamaGenerateText({
+    prompt,
+    format: "json",
+    temperature: Math.min(Math.max(env.ollamaTemperature, 0), 0.4),
+    numPredict,
+    numCtx: env.ollamaNumCtx,
+  });
+
+  return parseGeneratedQuizBatch(modelOutput, payload.allowedTypes, payload.questionCount);
+}
+
+export async function generateQuizFromLesson(input: GenerateQuizFromLessonInput): Promise<GeneratedQuizQuestion[]> {
+  if (!env.offlineAiEnabled) {
+    throw new Error("Offline AI is disabled. Enable OFFLINE_AI_ENABLED to generate quiz questions.");
   }
 
-  return normalized;
+  const sanitizedQuestionCount = Math.max(1, Math.min(input.questionCount, MAX_GENERATED_QUESTIONS));
+  const allowedTypes = normalizeRequestedQuestionTypes(input.questionTypes);
+  const allowedTypesText = allowedTypes.join(", ");
+  const lessonContext = buildRelevantLessonContext(input);
+  const batchSize = Math.max(1, Math.min(env.aiQuizGenBatchSize, 3, sanitizedQuestionCount));
+
+  const collected: GeneratedQuizQuestion[] = [];
+  let remaining = sanitizedQuestionCount;
+  let batchIndex = 0;
+
+  while (remaining > 0) {
+    const batchCount = Math.min(batchSize, remaining);
+    batchIndex += 1;
+    const batch = await generateQuizBatchFromLesson({
+      input,
+      questionCount: batchCount,
+      allowedTypes,
+      allowedTypesText,
+      lessonContext,
+    });
+
+    if (batch.length === 0) {
+      break;
+    }
+
+    collected.push(...batch);
+    remaining = sanitizedQuestionCount - collected.length;
+
+    if (batch.length < batchCount) {
+      break;
+    }
+  }
+
+  if (collected.length === 0) {
+    throw new Error(
+      batchIndex > 1
+        ? "Ollama returned zero valid questions after batched generation. Try fewer questions or a shorter lesson."
+        : "Ollama returned zero valid questions after validation.",
+    );
+  }
+
+  return collected.slice(0, sanitizedQuestionCount);
 }

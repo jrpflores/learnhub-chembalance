@@ -56,7 +56,13 @@ export default async function TeacherLessonsPage({ searchParams }: TeacherLesson
       initialLessons={lessons}
       initialSubjectOptions={subjectOptions}
       selectedSubject={selectedSubject ?? null}
-      initialIntent={params.intent?.trim()?.toLowerCase() === "import" ? "import" : null}
+      initialIntent={
+        params.intent?.trim()?.toLowerCase() === "import"
+          ? "import"
+          : params.intent?.trim()?.toLowerCase() === "create"
+            ? "create"
+            : null
+      }
       breadcrumbContext={
         subjectContext
           ? {

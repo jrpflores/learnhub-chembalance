@@ -65,7 +65,7 @@ if GRADER_PROVIDER not in ALLOWED_PROVIDERS:
     GRADER_PROVIDER = "auto"
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").strip().rstrip("/")
-OLLAMA_MODEL = sanitize_model_name(os.getenv("OLLAMA_MODEL", "qwen2.5:3b")) or "qwen2.5:3b"
+OLLAMA_MODEL = sanitize_model_name(os.getenv("OLLAMA_MODEL", "gemma2:2b")) or "gemma2:2b"
 OLLAMA_FALLBACK_MODELS = parse_model_list(os.getenv("OLLAMA_FALLBACK_MODELS"))
 OLLAMA_TIMEOUT_MS = env_int("OLLAMA_TIMEOUT_MS", 12000, minimum=500)
 OLLAMA_TEMPERATURE = env_float("OLLAMA_TEMPERATURE", 0.1, minimum=0.0, maximum=0.4)

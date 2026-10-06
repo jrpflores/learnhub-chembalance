@@ -6,6 +6,7 @@ export type OllamaGenerateInput = {
   format?: "json";
   temperature?: number;
   numPredict?: number;
+  numCtx?: number;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
 };
@@ -24,7 +25,7 @@ function candidateModels() {
 }
 
 function timeoutErrorMessage(model: string) {
-  return `Ollama request timed out after ${env.ollamaTimeoutMs}ms on model "${model}". Try fewer questions, a shorter lesson, a smaller OLLAMA_MODEL, or increase OLLAMA_TIMEOUT_MS.`;
+  return `Ollama request timed out after ${env.ollamaTimeoutMs}ms on model "${model}". On slow CPU, use Preview with 2–3 questions, shorten the lesson, lower OLLAMA_NUM_PREDICT / OLLAMA_NUM_CTX, or increase OLLAMA_TIMEOUT_MS.`;
 }
 
 async function readOllamaStream(
@@ -85,7 +86,8 @@ export async function ollamaGenerateText(input: OllamaGenerateInput): Promise<st
   let lastError: Error | null = null;
   const attemptErrors: string[] = [];
   const temperature = Math.min(Math.max(input.temperature ?? env.ollamaTemperature, 0), 0.4);
-  const numPredict = Math.max(256, Math.min(input.numPredict ?? env.ollamaNumPredict, 8192));
+  const numPredict = Math.max(128, Math.min(input.numPredict ?? env.ollamaNumPredict, 8192));
+  const numCtx = Math.max(512, Math.min(input.numCtx ?? env.ollamaNumCtx, 8192));
 
   for (const model of models) {
     const controller = new AbortController();
@@ -108,7 +110,7 @@ export async function ollamaGenerateText(input: OllamaGenerateInput): Promise<st
           prompt: input.prompt,
           stream: Boolean(input.stream),
           ...(input.format ? { format: input.format } : {}),
-          options: { temperature, num_predict: numPredict },
+          options: { temperature, num_predict: numPredict, num_ctx: numCtx },
           keep_alive: "10m",
         }),
         signal: input.signal ?? controller.signal,
