@@ -143,7 +143,7 @@ export function SectionsManager({ initialSections, teachers, subjects }: Section
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<SectionForm>(toForm(undefined, teachers[0]?.id, subjects[0]?.id));
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:admin-sections");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const [pending, startTransition] = useTransition();
 
   const teacherOptions = useMemo(() => teachers.filter((teacher) => teacher.isActive), [teachers]);

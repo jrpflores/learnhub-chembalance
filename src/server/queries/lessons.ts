@@ -765,7 +765,7 @@ export function listStudentLessons(studentId: string, params?: { subject?: strin
   const where: string[] = ["l.status = 'PUBLISHED'"];
   const values: unknown[] = [studentId, studentId];
   if (params?.subject) {
-    where.push("l.subject = ?");
+    where.push("lower(l.subject) = lower(?)");
     values.push(params.subject);
   }
 
@@ -803,6 +803,10 @@ export function listStudentLessons(studentId: string, params?: { subject?: strin
       JOIN lesson_sections ls ON ls.lesson_id = l.id
       JOIN section_students ss ON ss.section_id = ls.section_id AND ss.student_id = ? AND ss.is_active = 1
       JOIN sections sec ON sec.id = ss.section_id AND sec.status = 'ACTIVE'
+      JOIN section_subjects ssub ON ssub.section_id = sec.id
+      JOIN subjects sub ON sub.id = ssub.subject_id
+        AND sub.is_active = 1
+        AND (l.subject_id = sub.id OR lower(l.subject) = lower(sub.name))
       JOIN users u ON u.id = l.teacher_id
       LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.student_id = ?
       LEFT JOIN quizzes q ON q.lesson_id = l.id AND q.status = 'PUBLISHED'
@@ -837,6 +841,10 @@ export function canStudentAccessLesson(studentId: string, lessonId: string) {
        JOIN lesson_sections ls ON ls.lesson_id = l.id
        JOIN section_students ss ON ss.section_id = ls.section_id
        JOIN sections sec ON sec.id = ss.section_id
+       JOIN section_subjects ssub ON ssub.section_id = sec.id
+       JOIN subjects sub ON sub.id = ssub.subject_id
+         AND sub.is_active = 1
+         AND (l.subject_id = sub.id OR lower(l.subject) = lower(sub.name))
        WHERE l.id = ?
          AND l.status = 'PUBLISHED'
          AND ss.student_id = ?
@@ -863,6 +871,10 @@ export function studentLessonStats(studentId: string) {
            JOIN lesson_sections ls ON ls.lesson_id = l.id
            JOIN section_students ss ON ss.section_id = ls.section_id
            JOIN sections sec ON sec.id = ss.section_id
+           JOIN section_subjects ssub ON ssub.section_id = sec.id
+           JOIN subjects sub ON sub.id = ssub.subject_id
+             AND sub.is_active = 1
+             AND (l.subject_id = sub.id OR lower(l.subject) = lower(sub.name))
            WHERE l.status = 'PUBLISHED'
              AND ss.student_id = ?
              AND ss.is_active = 1

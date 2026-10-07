@@ -132,7 +132,7 @@ export function LessonDetail({
   const [success, setSuccess] = useState<string | null>(null);
   const [deleteLessonOpen, setDeleteLessonOpen] = useState(false);
   const [deleteQuizTarget, setDeleteQuizTarget] = useState<QuizSummary | null>(null);
-  const [quizViewMode, setQuizViewMode] = usePersistedViewMode("learnhub:view:teacher-lesson-quizzes");
+  const [quizViewMode, setQuizViewMode] = usePersistedViewMode();
   const [form, setForm] = useState<LessonForm>(() => mapLessonToForm(lesson));
   const [jobs, setJobs] = useState<QuizGenerationJob[]>(generationJobs);
   const [jobsLoading, setJobsLoading] = useState(false);

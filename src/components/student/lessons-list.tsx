@@ -32,7 +32,7 @@ type StudentLessonsListProps = {
 const PAGE_SIZE = 9;
 
 export function StudentLessonsList({ lessons, selectedSubject }: StudentLessonsListProps) {
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:student-lessons");
+  const [viewMode, setViewMode] = usePersistedViewMode("tile");
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(lessons.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);

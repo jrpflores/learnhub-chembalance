@@ -63,7 +63,7 @@ export function SubjectsManager({ initialSubjects }: SubjectsManagerProps) {
   const [subjectModalOpen, setSubjectModalOpen] = useState(false);
   const [subjectForm, setSubjectForm] = useState<SubjectForm>(toForm());
   const [deleteTarget, setDeleteTarget] = useState<Subject | null>(null);
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:admin-subjects");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const [pending, startTransition] = useTransition();
 
   const filtered = useMemo(() => {

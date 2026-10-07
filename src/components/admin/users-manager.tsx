@@ -38,7 +38,7 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<UserItem | null>(null);
   const [newPassword, setNewPassword] = useState("");
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:admin-users");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: PAGE_SIZE,

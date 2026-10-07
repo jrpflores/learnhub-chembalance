@@ -113,7 +113,7 @@ export function LessonsManager({
   const [importLoading, setImportLoading] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const [form, setForm] = useState<LessonCreateForm>(defaultForm(selectedSubject ?? subjectOptions[0] ?? ""));
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:teacher-lessons");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const coverFileInputRef = useRef<HTMLInputElement | null>(null);
   const subjectDetailHref = useMemo(() => {
     if (!breadcrumbContext) {

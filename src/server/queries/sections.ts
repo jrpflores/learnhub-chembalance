@@ -585,7 +585,19 @@ export function setSectionStudents(sectionId: string, studentIds: string[], assi
   const db = getDb();
   const now = nowIso();
   const ids = Array.from(new Set(studentIds.filter(Boolean)));
-  assertStudentsAvailableForSection(sectionId, ids);
+  // Roster members already on this section stay. Only new adds must be free of an active section.
+  const existingStudentIds = new Set(
+    db
+      .prepare<{ student_id: string }[]>(
+        `SELECT student_id
+         FROM section_students
+         WHERE section_id = ? AND is_active = 1`,
+      )
+      .all(sectionId)
+      .map((row) => row.student_id),
+  );
+  const newcomers = ids.filter((studentId) => !existingStudentIds.has(studentId));
+  assertStudentsAvailableForSection(sectionId, newcomers);
 
   db.transaction(() => {
     db.prepare(`DELETE FROM section_students WHERE section_id = ?`).run(sectionId);
@@ -602,7 +614,7 @@ export function setSectionStudents(sectionId: string, studentIds: string[], assi
   })();
 }
 
-/** Active students free for this section, plus students already on this roster. */
+/** Students with no active-section enrollment, plus students already on this roster. Archived enrollment does not block assignment. */
 export function listStudentsAvailableForSection(sectionId: string) {
   const db = getDb();
   return db
@@ -622,8 +634,10 @@ export function listStudentsAvailableForSection(sectionId: string) {
            NOT EXISTS (
              SELECT 1
              FROM section_students ss
+             JOIN sections sec ON sec.id = ss.section_id
              WHERE ss.student_id = u.id
                AND ss.is_active = 1
+               AND sec.status = 'ACTIVE'
            )
            OR EXISTS (
              SELECT 1
@@ -671,6 +685,7 @@ function assertStudentsAvailableForSection(sectionId: string | null, studentIds:
        JOIN users u ON u.id = ss.student_id
        JOIN sections s ON s.id = ss.section_id
        WHERE ss.is_active = 1
+         AND s.status = 'ACTIVE'
          AND ss.student_id IN (${placeholders})${excludeClause}
        ORDER BY u.full_name ASC`,
     )
@@ -683,7 +698,7 @@ function assertStudentsAvailableForSection(sectionId: string | null, studentIds:
   const details = conflicts
     .map((row) => `${row.full_name} (already in ${row.section_name})`)
     .join("; ");
-  throw new Error(`Each student can only belong to one section. ${details}`);
+  throw new Error(`Each student can only belong to one active section. ${details}`);
 }
 
 export function listSectionSubjectIds(sectionId: string) {

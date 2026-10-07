@@ -1,31 +1,34 @@
 "use client";
 
 import { LayoutGrid, List } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export type ViewMode = "tile" | "list";
 
-export function usePersistedViewMode(storageKey: string, defaultMode: ViewMode = "list") {
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+const VIEW_MODE_STORAGE_KEY = "learnhub:view-mode";
+
+export function usePersistedViewMode(defaultMode: ViewMode = "list") {
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     if (typeof window === "undefined") {
       return defaultMode;
     }
     try {
-      const stored = window.localStorage.getItem(storageKey);
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
       return stored === "tile" || stored === "list" ? stored : defaultMode;
     } catch {
       return defaultMode;
     }
   });
 
-  useEffect(() => {
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
     try {
-      window.localStorage.setItem(storageKey, viewMode);
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
     } catch {
       // No-op for private browsing or restricted environments.
     }
-  }, [storageKey, viewMode]);
+  }, []);
 
   return [viewMode, setViewMode] as const;
 }

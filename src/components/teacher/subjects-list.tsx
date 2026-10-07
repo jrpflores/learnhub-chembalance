@@ -38,7 +38,7 @@ function pageCount(total: number) {
 
 export function TeacherSubjectsList({ sections, subjects, selectedSection = null }: TeacherSubjectsListProps) {
   const router = useRouter();
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:teacher-subjects");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 

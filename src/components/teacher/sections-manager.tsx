@@ -107,7 +107,7 @@ export function SectionsManager({
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<SectionForm>(defaultForm(subjects[0]?.id));
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:teacher-sections");
+  const [viewMode, setViewMode] = usePersistedViewMode();
   const [pending, startTransition] = useTransition();
   const hasSubjectAssignments = subjects.length > 0;
 

@@ -73,7 +73,7 @@ function attemptsLabel(quiz: QuizItem) {
 }
 
 export function StudentQuizzesList({ quizzes }: StudentQuizzesListProps) {
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:student-quizzes");
+  const [viewMode, setViewMode] = usePersistedViewMode("tile");
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(quizzes.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);

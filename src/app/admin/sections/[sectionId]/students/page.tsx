@@ -16,7 +16,7 @@ export default async function AdminSectionStudentsPage({ params }: AdminSectionS
     notFound();
   }
 
-  // Only unassigned students + current section roster (one section per student).
+  // Students with no active section, plus this roster. Archived enrollment does not block assignment.
   const students = listStudentsAvailableForSection(sectionId);
 
   return (

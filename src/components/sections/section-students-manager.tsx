@@ -271,7 +271,8 @@ export function SectionStudentsManager({
             <div className="rounded-xl border border-[var(--line-200)] p-3">
               <h3 className="text-sm font-bold text-[var(--ink-900)]">Available Students</h3>
               <p className="mt-1 text-xs text-[var(--ink-500)]">
-                Only unassigned students shown. Each student can belong to one section.
+                Students with no active section can be added, including students whose section is archived. Each
+                student can belong to one active section.
               </p>
               <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {paginatedAvailablePool.map((student) => (

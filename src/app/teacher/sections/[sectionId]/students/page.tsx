@@ -20,7 +20,7 @@ export default async function TeacherSectionStudentsPage({ params }: TeacherSect
     notFound();
   }
 
-  // Keep one-section rule for teachers too: only free students + this roster.
+  // Same rule as admin: no active section, plus this roster. Archived enrollment does not block assignment.
   const availableById = new Map(listStudentsAvailableForSection(sectionId).map((student) => [student.id, student]));
   for (const enrolled of section.students) {
     if (!availableById.has(enrolled.studentId)) {

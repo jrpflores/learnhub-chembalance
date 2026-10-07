@@ -21,7 +21,7 @@ type StudentSubjectsListProps = {
 const PAGE_SIZE = 9;
 
 export function StudentSubjectsList({ subjects }: StudentSubjectsListProps) {
-  const [viewMode, setViewMode] = usePersistedViewMode("learnhub:view:student-subjects");
+  const [viewMode, setViewMode] = usePersistedViewMode("tile");
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(subjects.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
