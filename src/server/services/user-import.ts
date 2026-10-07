@@ -10,6 +10,7 @@ import {
   findDefaultSectionOwnerTeacherId,
   getOrCreateActiveSectionForImport,
   listSectionSubjectIds,
+  studentSectionMembership,
 } from "@/server/queries/sections";
 import { createUser, getUserByEmail } from "@/server/queries/users";
 
@@ -18,11 +19,18 @@ export type { UserImportRowResult, UserImportSummary } from "@/lib/user-import-t
 const emailSchema = z.string().email();
 const fullNameSchema = z.string().min(2).max(120);
 
+type EnrollmentContext = "new" | "existing";
+
+function enrollmentFailurePrefix(context: EnrollmentContext) {
+  return context === "existing" ? "Existing student:" : "User created but";
+}
+
 function resolveSectionEnrollment(
   row: ParsedUserImportRow,
   role: Role,
   userId: string,
   assignedById?: string,
+  context: EnrollmentContext = "new",
 ): { applied: boolean; warning?: string; warnings?: string[] } {
   if (role === "ADMIN") {
     return { applied: false };
@@ -33,13 +41,12 @@ function resolveSectionEnrollment(
     return { applied: false };
   }
 
-  const ownerTeacherId =
-    role === "TEACHER" ? userId : findDefaultSectionOwnerTeacherId();
+  const ownerTeacherId = role === "TEACHER" ? userId : findDefaultSectionOwnerTeacherId();
 
   if (!ownerTeacherId) {
     return {
       applied: false,
-      warning: `User created but section "${sectionName}" was not created because no active teacher exists in the system.`,
+      warning: `${enrollmentFailurePrefix(context)} section "${sectionName}" was not created because no active teacher exists in the system.`,
     };
   }
 
@@ -62,7 +69,10 @@ function resolveSectionEnrollment(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to create or resolve section.";
-    return { applied: false, warning: `User created but section assignment failed: ${message}` };
+    return {
+      applied: false,
+      warning: `${enrollmentFailurePrefix(context)} section assignment failed: ${message}`,
+    };
   }
 
   try {
@@ -81,10 +91,31 @@ function resolveSectionEnrollment(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to assign section.";
-    return { applied: false, warning: `User created but section assignment failed: ${message}` };
+    return {
+      applied: false,
+      warning: `${enrollmentFailurePrefix(context)} section assignment failed: ${message}`,
+    };
   }
 
   return { applied: false };
+}
+
+function appendEnrollmentWarnings(
+  summary: UserImportSummary,
+  rowNumber: number,
+  email: string,
+  enrollment: { applied: boolean; warning?: string; warnings?: string[] },
+) {
+  const warningMessages = [...(enrollment.warnings ?? []), ...(enrollment.warning ? [enrollment.warning] : [])];
+  for (const message of warningMessages) {
+    summary.warnings += 1;
+    summary.results.push({
+      rowNumber,
+      status: "warning",
+      email,
+      message,
+    });
+  }
 }
 
 export function importUsersFromRows(params: {
@@ -94,6 +125,7 @@ export function importUsersFromRows(params: {
 }): UserImportSummary {
   const summary: UserImportSummary = {
     created: 0,
+    enrolled: 0,
     skipped: 0,
     errors: 0,
     warnings: 0,
@@ -164,14 +196,53 @@ export function importUsersFromRows(params: {
     }
     seenEmails.add(emailNormalized);
 
-    if (getUserByEmail(emailNormalized)) {
-      summary.skipped += 1;
-      summary.results.push({
-        rowNumber: row.rowNumber,
-        status: "skipped",
-        email: emailNormalized,
-        reason: "User with this email already exists.",
-      });
+    const existingUser = getUserByEmail(emailNormalized);
+    if (existingUser) {
+      if (existingUser.role !== "STUDENT" || role !== "STUDENT") {
+        summary.skipped += 1;
+        summary.results.push({
+          rowNumber: row.rowNumber,
+          status: "skipped",
+          email: emailNormalized,
+          reason: "User with this email already exists.",
+        });
+        continue;
+      }
+
+      const memberships = studentSectionMembership(existingUser.id);
+      if (memberships.length > 0) {
+        summary.skipped += 1;
+        summary.results.push({
+          rowNumber: row.rowNumber,
+          status: "skipped",
+          email: emailNormalized,
+          reason: `Student already assigned to section "${memberships[0]!.sectionName}".`,
+        });
+        continue;
+      }
+
+      if (!row.sectionName.trim()) {
+        summary.skipped += 1;
+        summary.results.push({
+          rowNumber: row.rowNumber,
+          status: "skipped",
+          email: emailNormalized,
+          reason: "Student exists but CSV has no section to assign.",
+        });
+        continue;
+      }
+
+      const enrollment = resolveSectionEnrollment(row, "STUDENT", existingUser.id, params.createdById, "existing");
+      if (enrollment.applied) {
+        summary.enrolled += 1;
+        summary.results.push({
+          rowNumber: row.rowNumber,
+          status: "enrolled",
+          email: emailNormalized,
+          sectionApplied: true,
+        });
+      }
+      appendEnrollmentWarnings(summary, row.rowNumber, emailNormalized, enrollment);
       continue;
     }
 
@@ -191,7 +262,7 @@ export function importUsersFromRows(params: {
         });
       })();
 
-      const enrollment = resolveSectionEnrollment(row, role, userId, params.createdById);
+      const enrollment = resolveSectionEnrollment(row, role, userId, params.createdById, "new");
 
       summary.created += 1;
       summary.results.push({
@@ -202,19 +273,7 @@ export function importUsersFromRows(params: {
         sectionApplied: enrollment.applied,
       });
 
-      const warningMessages = [
-        ...(enrollment.warnings ?? []),
-        ...(enrollment.warning ? [enrollment.warning] : []),
-      ];
-      for (const message of warningMessages) {
-        summary.warnings += 1;
-        summary.results.push({
-          rowNumber: row.rowNumber,
-          status: "warning",
-          email: emailNormalized,
-          message,
-        });
-      }
+      appendEnrollmentWarnings(summary, row.rowNumber, emailNormalized, enrollment);
     } catch (error) {
       summary.errors += 1;
       const message = error instanceof Error ? error.message : "Unable to create user.";

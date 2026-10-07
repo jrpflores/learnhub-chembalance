@@ -1050,6 +1050,10 @@ export function canTeacherAccessSection(teacherId: string, sectionId: string) {
   return (row?.total ?? 0) > 0;
 }
 
+export function studentHasActiveSection(studentId: string) {
+  return studentSectionMembership(studentId).length > 0;
+}
+
 export function studentSectionMembership(studentId: string) {
   const db = getDb();
   return db

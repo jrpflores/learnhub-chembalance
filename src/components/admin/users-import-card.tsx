@@ -67,7 +67,8 @@ export function UsersImportCard({ onImported }: UsersImportCardProps) {
         <h2 className="text-lg font-bold text-[var(--ink-900)]">Import Users</h2>
         <p className="text-sm text-[var(--ink-500)]">
           Upload CSV with full name, email, gender (male/female), user type, and optional section. If the section name
-          is new, an active section is created automatically. New users share one temporary password.
+          is new, an active section is created automatically. New users share one temporary password. Existing students
+          with no section can be assigned by re-importing the same email with a section column.
         </p>
         <p className="mt-1 text-sm text-[var(--ink-500)]">
           Download the template first so column headers match what the importer expects.
@@ -105,7 +106,8 @@ export function UsersImportCard({ onImported }: UsersImportCardProps) {
       {summary ? (
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-200)] bg-[var(--line-50)] p-4 text-sm">
           <p className="font-semibold text-[var(--ink-800)]">
-            Created {summary.created}, skipped {summary.skipped}, errors {summary.errors}, warnings {summary.warnings}
+            Created {summary.created}, enrolled {summary.enrolled}, skipped {summary.skipped}, errors {summary.errors},
+            warnings {summary.warnings}
           </p>
           {resultItems.length > 0 ? (
             <ul className="max-h-48 space-y-1 overflow-y-auto text-[var(--ink-600)]">
@@ -116,7 +118,9 @@ export function UsersImportCard({ onImported }: UsersImportCardProps) {
                     ? `${entry.email} — ${entry.reason}`
                     : entry.status === "error"
                       ? `${entry.email} — ${entry.reason}`
-                      : `${entry.email} — ${entry.message}`}
+                      : entry.status === "enrolled"
+                        ? `${entry.email} — assigned to section`
+                        : `${entry.email} — ${entry.message}`}
                 </li>
               ))}
             </ul>
