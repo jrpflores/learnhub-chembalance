@@ -1,4 +1,5 @@
 export type Role = "ADMIN" | "TEACHER" | "STUDENT";
+export type Gender = "MALE" | "FEMALE";
 
 export type LessonStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 export type DifficultyLevel = "EASY" | "MEDIUM" | "HARD";
@@ -43,6 +44,7 @@ export type SessionUser = {
   fullName: string;
   role: Role;
   isActive: boolean;
+  gender: Gender | null;
 };
 
 export type DbUser = SessionUser & {

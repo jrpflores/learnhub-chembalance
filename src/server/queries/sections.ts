@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { getDb, nowIso } from "@/lib/db";
 import type { SectionStatus } from "@/domain/types";
+import { getUserById } from "@/server/queries/users";
 
 type SectionRow = {
   id: string;
@@ -1075,4 +1076,169 @@ export function studentSectionMembership(studentId: string) {
       sectionName: entry.section_name,
       teacherName: entry.teacher_name,
     }));
+}
+
+export function findActiveSectionsByName(name: string) {
+  const db = getDb();
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return [] as { id: string; name: string }[];
+  }
+
+  return db
+    .prepare<{ id: string; name: string }[]>(
+      `SELECT id, name
+       FROM sections
+       WHERE status = 'ACTIVE' AND lower(trim(name)) = lower(trim(?))
+       ORDER BY updated_at DESC`,
+    )
+    .all(trimmed);
+}
+
+/** Add one student to a section roster without replacing existing members. */
+export function addStudentToSection(sectionId: string, studentId: string, assignedById?: string) {
+  const db = getDb();
+  const now = nowIso();
+
+  const existing = db
+    .prepare<{ id: string }>(
+      `SELECT id
+       FROM section_students
+       WHERE section_id = ? AND student_id = ? AND is_active = 1
+       LIMIT 1`,
+    )
+    .get(sectionId, studentId);
+
+  if (existing) {
+    return;
+  }
+
+  assertStudentsAvailableForSection(sectionId, [studentId]);
+
+  db.prepare(
+    `INSERT INTO section_students (
+      id, section_id, student_id, assigned_by_id, is_active, enrolled_at
+    ) VALUES (?, ?, ?, ?, 1, ?)`,
+  ).run(crypto.randomUUID(), sectionId, studentId, assignedById ?? null, now);
+
+  db.prepare("UPDATE sections SET updated_at = ? WHERE id = ?").run(now, sectionId);
+}
+
+/** Link a teacher to a section and its subjects without removing other teachers. */
+export function assignTeacherToSection(sectionId: string, teacherId: string, assignedById?: string) {
+  const db = getDb();
+  const now = nowIso();
+
+  db.transaction(() => {
+    const teacherLink = db
+      .prepare<{ total: number }>(
+        `SELECT COUNT(*) AS total
+         FROM section_teachers
+         WHERE section_id = ? AND teacher_id = ? AND is_active = 1`,
+      )
+      .get(sectionId, teacherId);
+
+    if ((teacherLink?.total ?? 0) === 0) {
+      db.prepare(
+        `INSERT INTO section_teachers (
+          id, section_id, teacher_id, assigned_by_id, is_active, assigned_at
+        ) VALUES (?, ?, ?, ?, 1, ?)`,
+      ).run(crypto.randomUUID(), sectionId, teacherId, assignedById ?? null, now);
+    }
+
+    const subjectIds = listSectionSubjectIds(sectionId);
+    for (const subjectId of subjectIds) {
+      const subjectTeacherLink = db
+        .prepare<{ total: number }>(
+          `SELECT COUNT(*) AS total
+           FROM section_subject_teachers
+           WHERE section_id = ? AND subject_id = ? AND teacher_id = ? AND is_active = 1`,
+        )
+        .get(sectionId, subjectId, teacherId);
+
+      if ((subjectTeacherLink?.total ?? 0) === 0) {
+        db.prepare(
+          `INSERT INTO section_subject_teachers (
+            id, section_id, subject_id, teacher_id, assigned_by_id, is_active, assigned_at, ended_at
+          ) VALUES (?, ?, ?, ?, ?, 1, ?, NULL)`,
+        ).run(crypto.randomUUID(), sectionId, subjectId, teacherId, assignedById ?? null, now);
+      }
+
+      const globalSubjectLink = db
+        .prepare<{ total: number }>(
+          `SELECT COUNT(*) AS total
+           FROM teacher_subjects
+           WHERE teacher_id = ? AND subject_id = ? AND is_active = 1`,
+        )
+        .get(teacherId, subjectId);
+
+      if ((globalSubjectLink?.total ?? 0) === 0) {
+        db.prepare(
+          `INSERT INTO teacher_subjects (
+            id, teacher_id, subject_id, assigned_by_id, is_active, assigned_at
+          ) VALUES (?, ?, ?, ?, 1, ?)`,
+        ).run(crypto.randomUUID(), teacherId, subjectId, assignedById ?? null, now);
+      }
+    }
+
+    db.prepare("UPDATE sections SET updated_at = ? WHERE id = ?").run(now, sectionId);
+  })();
+}
+
+function defaultImportSchoolYear() {
+  return String(new Date().getFullYear());
+}
+
+/** First active teacher in the system, used when import creates a section before any teacher row exists. */
+export function findDefaultSectionOwnerTeacherId(preferredTeacherId?: string) {
+  if (preferredTeacherId) {
+    const preferred = getUserById(preferredTeacherId);
+    if (preferred?.role === "TEACHER" && preferred.isActive) {
+      return preferredTeacherId;
+    }
+  }
+
+  const db = getDb();
+  const row = db
+    .prepare<{ id: string }>(
+      `SELECT id
+       FROM users
+       WHERE role = 'TEACHER' AND is_active = 1
+       ORDER BY created_at ASC
+       LIMIT 1`,
+    )
+    .get();
+
+  return row?.id ?? null;
+}
+
+export function getOrCreateActiveSectionForImport(params: {
+  name: string;
+  ownerTeacherId: string;
+  assignedById?: string;
+  gradeLevel?: string;
+  schoolYear?: string;
+}) {
+  const trimmedName = params.name.trim();
+  const matches = findActiveSectionsByName(trimmedName);
+
+  if (matches.length > 1) {
+    throw new Error(`Multiple active sections named "${trimmedName}".`);
+  }
+
+  if (matches.length === 1) {
+    return { sectionId: matches[0]!.id, sectionName: matches[0]!.name, created: false };
+  }
+
+  const sectionId = createSection({
+    teacherId: params.ownerTeacherId,
+    name: trimmedName,
+    gradeLevel: params.gradeLevel ?? "General",
+    schoolYear: params.schoolYear ?? defaultImportSchoolYear(),
+    status: "ACTIVE",
+    description: "Created automatically from user import.",
+    assignedById: params.assignedById,
+  });
+
+  return { sectionId, sectionName: trimmedName, created: true };
 }

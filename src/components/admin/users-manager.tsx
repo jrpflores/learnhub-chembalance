@@ -10,11 +10,14 @@ import { Modal } from "@/components/ui/modal";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { stickyActionsTdClassName, stickyActionsThClassName, tableScrollClassName } from "@/components/ui/data-table";
 import { usePersistedViewMode, ViewModeToggle } from "@/components/ui/view-mode-toggle";
+import { UsersImportCard } from "@/components/admin/users-import-card";
+import { formatGenderLabel } from "@/lib/gender-display";
 
 type UserItem = {
   id: string;
   fullName: string;
   email: string;
+  gender: "MALE" | "FEMALE" | null;
   role: "ADMIN" | "TEACHER" | "STUDENT";
   isActive: boolean;
   streakDays: number;
@@ -31,10 +34,12 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<"ALL" | "ADMIN" | "TEACHER" | "STUDENT">("ALL");
   const [createRole, setCreateRole] = useState<"ADMIN" | "TEACHER" | "STUDENT">("STUDENT");
+  const [createGender, setCreateGender] = useState<"MALE" | "FEMALE">("MALE");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
   const [editFullName, setEditFullName] = useState("");
+  const [editGender, setEditGender] = useState<"MALE" | "FEMALE">("MALE");
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<UserItem | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -144,6 +149,7 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
           email: form.email,
           password: form.password,
           role: createRole,
+          gender: createGender,
         }),
       });
 
@@ -183,15 +189,19 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
     setError(null);
     setEditingUser(user);
     setEditFullName(user.fullName);
+    setEditGender(user.gender ?? "MALE");
   }
 
-  function saveUserName() {
+  function saveUserProfile() {
     if (!editingUser) {
       return;
     }
 
     const trimmedName = editFullName.trim();
-    if (!trimmedName || trimmedName === editingUser.fullName) {
+    const nameChanged = trimmedName && trimmedName !== editingUser.fullName;
+    const genderChanged = editGender !== (editingUser.gender ?? "MALE");
+
+    if (!nameChanged && !genderChanged) {
       setEditingUser(null);
       return;
     }
@@ -205,12 +215,13 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
         },
         body: JSON.stringify({
           id: editingUser.id,
-          fullName: trimmedName,
+          ...(nameChanged ? { fullName: trimmedName } : {}),
+          ...(genderChanged ? { gender: editGender } : {}),
         }),
       });
 
       if (!response.ok) {
-        setError(await readApiError(response, "Unable to update name"));
+        setError(await readApiError(response, "Unable to update user"));
         return;
       }
 
@@ -286,6 +297,10 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
 
   return (
     <div className="space-y-6">
+      <UsersImportCard
+        onImported={() => reloadUsers({ page: pagination.page })}
+      />
+
       <Card>
         <h2 className="text-lg font-bold text-[var(--ink-900)]">Create User</h2>
         <p className="text-sm text-[var(--ink-500)]">Create admins, teachers, and students with role-aware defaults.</p>
@@ -310,6 +325,14 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
             type="password"
             onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
           />
+          <select
+            className="h-10 rounded-lg border border-[var(--line-300)] px-3 text-sm"
+            value={createGender}
+            onChange={(event) => setCreateGender(event.target.value as "MALE" | "FEMALE")}
+          >
+            <option value="MALE">Male</option>
+            <option value="FEMALE">Female</option>
+          </select>
           <select
             className="h-10 rounded-lg border border-[var(--line-300)] px-3 text-sm"
             value={createRole}
@@ -378,6 +401,7 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
                 <tr className="border-b border-[var(--line-200)] text-left text-[var(--ink-500)]">
                   <th className="px-2 py-2 font-semibold">Name</th>
                   <th className="px-2 py-2 font-semibold">Email</th>
+                  <th className="px-2 py-2 font-semibold">Gender</th>
                   <th className="px-2 py-2 font-semibold">Role</th>
                   <th className="px-2 py-2 font-semibold">Status</th>
                   <th className={stickyActionsThClassName}>Actions</th>
@@ -388,6 +412,7 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
                   <tr key={user.id} className="border-b border-[var(--line-100)]">
                     <td className="px-2 py-2 font-medium text-[var(--ink-800)]">{user.fullName}</td>
                     <td className="px-2 py-2 text-[var(--ink-600)]">{user.email}</td>
+                    <td className="px-2 py-2 text-[var(--ink-600)]">{formatGenderLabel(user.gender)}</td>
                     <td className="px-2 py-2">
                       <Chip tone={user.role === "ADMIN" ? "warning" : user.role === "TEACHER" ? "brand" : "success"}>
                         {user.role}
@@ -432,6 +457,7 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
                   <Chip tone={user.role === "ADMIN" ? "warning" : user.role === "TEACHER" ? "brand" : "success"}>
                     {user.role}
                   </Chip>
+                  <span className="text-xs text-[var(--ink-500)]">{formatGenderLabel(user.gender)}</span>
                 </div>
               </div>
             ))}
@@ -454,8 +480,8 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
       <Modal
         open={Boolean(editingUser)}
         onClose={() => setEditingUser(null)}
-        title="Edit User Name"
-        description="Update the full name and save changes."
+        title="Edit User"
+        description="Update name or gender."
       >
         <div className="space-y-4">
           <label className="block text-sm font-semibold text-[var(--ink-700)]">
@@ -467,13 +493,24 @@ export function UsersManager({ initialUsers }: UsersManagerProps) {
               placeholder="Enter full name"
             />
           </label>
+          <label className="block text-sm font-semibold text-[var(--ink-700)]">
+            Gender
+            <select
+              className="mt-1 h-10 w-full rounded-lg border border-[var(--line-300)] px-3 text-sm"
+              value={editGender}
+              onChange={(event) => setEditGender(event.target.value as "MALE" | "FEMALE")}
+            >
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+            </select>
+          </label>
 
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEditingUser(null)}>
               Cancel
             </Button>
-            <Button onClick={saveUserName} disabled={pending}>
-              Save Name
+            <Button onClick={saveUserProfile} disabled={pending}>
+              Save Changes
             </Button>
           </div>
         </div>

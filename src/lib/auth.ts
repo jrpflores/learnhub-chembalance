@@ -82,6 +82,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+    gender: user.gender,
   };
 }
 

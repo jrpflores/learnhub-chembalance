@@ -1,5 +1,5 @@
 import { getDb, toBoolean } from "@/lib/db";
-import type { DbUser, PaginatedResult, Role, SessionUser } from "@/domain/types";
+import type { DbUser, Gender, PaginatedResult, Role, SessionUser } from "@/domain/types";
 import crypto from "node:crypto";
 
 type UserRow = {
@@ -12,7 +12,15 @@ type UserRow = {
   streak_days: number;
   timezone: string | null;
   locale: string | null;
+  gender: string | null;
 };
+
+function mapGender(value: string | null): Gender | null {
+  if (value === "MALE" || value === "FEMALE") {
+    return value;
+  }
+  return null;
+}
 
 function mapUser(row: UserRow): DbUser {
   return {
@@ -22,6 +30,7 @@ function mapUser(row: UserRow): DbUser {
     fullName: row.full_name,
     role: row.role,
     isActive: toBoolean(row.is_active),
+    gender: mapGender(row.gender),
     streakDays: row.streak_days,
     timezone: row.timezone,
     locale: row.locale,
@@ -32,7 +41,7 @@ export function getUserByEmail(email: string): DbUser | null {
   const db = getDb();
   const row = db
     .prepare<UserRow>(
-      `SELECT id, email, password_hash, full_name, role, is_active, streak_days, timezone, locale
+      `SELECT id, email, password_hash, full_name, role, is_active, streak_days, timezone, locale, gender
        FROM users
        WHERE lower(email) = lower(?)
        LIMIT 1`,
@@ -46,7 +55,7 @@ export function getUserById(id: string): DbUser | null {
   const db = getDb();
   const row = db
     .prepare<UserRow>(
-      `SELECT id, email, password_hash, full_name, role, is_active, streak_days, timezone, locale
+      `SELECT id, email, password_hash, full_name, role, is_active, streak_days, timezone, locale, gender
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -70,7 +79,7 @@ export function listUsers(params: {
   search?: string;
   page?: number;
   pageSize?: number;
-}): PaginatedResult<SessionUser & { streakDays: number }> {
+}): PaginatedResult<SessionUser & { streakDays: number; gender: Gender | null }> {
   const db = getDb();
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
@@ -105,9 +114,10 @@ export function listUsers(params: {
         role: Role;
         is_active: number;
         streak_days: number;
+        gender: string | null;
       }[]
     >(
-      `SELECT id, email, full_name, role, is_active, streak_days
+      `SELECT id, email, full_name, role, is_active, streak_days, gender
        FROM users
        ${whereSql}
        ORDER BY created_at DESC
@@ -122,6 +132,7 @@ export function listUsers(params: {
       fullName: row.full_name,
       role: row.role,
       isActive: toBoolean(row.is_active),
+      gender: mapGender(row.gender),
       streakDays: row.streak_days,
     })),
     total,
@@ -136,6 +147,7 @@ export function createUser(payload: {
   email: string;
   passwordHash: string;
   fullName: string;
+  gender: Gender;
   role: Role;
   createdById?: string;
 }) {
@@ -143,13 +155,14 @@ export function createUser(payload: {
 
   db.prepare(
     `INSERT INTO users (
-      id, email, password_hash, full_name, role, is_active, created_by_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      id, email, password_hash, full_name, gender, role, is_active, created_by_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
   ).run(
     payload.id,
     payload.email,
     payload.passwordHash,
     payload.fullName,
+    payload.gender,
     payload.role,
     payload.createdById ?? null,
     new Date().toISOString(),
@@ -161,6 +174,7 @@ export function updateUser(payload: {
   id: string;
   fullName?: string;
   email?: string;
+  gender?: Gender;
   role?: Role;
   isActive?: boolean;
 }) {
@@ -175,6 +189,10 @@ export function updateUser(payload: {
   if (payload.email !== undefined) {
     updates.push("email = ?");
     values.push(payload.email);
+  }
+  if (payload.gender !== undefined) {
+    updates.push("gender = ?");
+    values.push(payload.gender);
   }
   if (payload.role !== undefined) {
     updates.push("role = ?");

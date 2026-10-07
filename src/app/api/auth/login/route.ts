@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       fullName: user.fullName,
       role: user.role,
       isActive: user.isActive,
+      gender: user.gender,
     });
 
     touchLastLogin(user.id);

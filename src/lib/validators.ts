@@ -18,9 +18,12 @@ export const loginSchema = z.object({
   password: z.string().min(8),
 });
 
+export const genderSchema = z.enum(["MALE", "FEMALE"]);
+
 export const createUserSchema = z.object({
   email: z.string().email(),
   fullName: z.string().min(2).max(120),
+  gender: genderSchema,
   role: z.enum(["ADMIN", "TEACHER", "STUDENT"]),
   password: z.string().min(8).max(128),
 });
@@ -29,6 +32,7 @@ export const updateUserSchema = z.object({
   id: z.string(),
   fullName: z.string().min(2).max(120).optional(),
   email: z.string().email().optional(),
+  gender: genderSchema.optional(),
   role: z.enum(["ADMIN", "TEACHER", "STUDENT"]).optional(),
   isActive: z.boolean().optional(),
 });
@@ -36,6 +40,10 @@ export const updateUserSchema = z.object({
 export const resetPasswordSchema = z.object({
   userId: z.string(),
   newPassword: z.string().min(8).max(128),
+});
+
+export const importUsersPasswordSchema = z.object({
+  temporaryPassword: z.string().min(8).max(128),
 });
 
 export const changeOwnPasswordSchema = z

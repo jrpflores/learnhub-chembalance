@@ -64,6 +64,7 @@ export async function POST(request: Request) {
       id: userId,
       email,
       fullName: parsed.data.fullName.trim(),
+      gender: parsed.data.gender,
       role: parsed.data.role,
       passwordHash,
       createdById: auth.user?.id,
@@ -109,6 +110,7 @@ export async function PATCH(request: Request) {
       id: parsed.data.id,
       fullName: parsed.data.fullName?.trim(),
       email: parsed.data.email?.trim().toLowerCase(),
+      gender: parsed.data.gender,
       role: parsed.data.role,
       isActive: parsed.data.isActive,
     });

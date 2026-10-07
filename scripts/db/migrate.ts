@@ -43,6 +43,9 @@ if (!hasColumn("lessons", "subject_id")) {
 if (!hasColumn("quizzes", "show_answer_key")) {
   db.exec("ALTER TABLE quizzes ADD COLUMN show_answer_key INTEGER NOT NULL DEFAULT 1");
 }
+if (hasTable("users") && !hasColumn("users", "gender")) {
+  db.exec("ALTER TABLE users ADD COLUMN gender TEXT CHECK (gender IS NULL OR gender IN ('MALE', 'FEMALE'))");
+}
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_lessons_subject_id_status ON lessons(subject_id, status)");
 db.exec(

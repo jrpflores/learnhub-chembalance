@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   full_name TEXT NOT NULL,
+  gender TEXT CHECK (gender IS NULL OR gender IN ('MALE', 'FEMALE')),
   role TEXT NOT NULL CHECK (role IN ('ADMIN', 'TEACHER', 'STUDENT')),
   is_active INTEGER NOT NULL DEFAULT 1,
   avatar_url TEXT,
