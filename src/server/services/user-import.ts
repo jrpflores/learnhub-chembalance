@@ -41,12 +41,13 @@ function resolveSectionEnrollment(
     return { applied: false };
   }
 
-  const ownerTeacherId = role === "TEACHER" ? userId : findDefaultSectionOwnerTeacherId();
+  const ownerTeacherId =
+    role === "TEACHER" ? userId : findDefaultSectionOwnerTeacherId(undefined, assignedById);
 
   if (!ownerTeacherId) {
     return {
       applied: false,
-      warning: `${enrollmentFailurePrefix(context)} section "${sectionName}" was not created because no active teacher exists in the system.`,
+      warning: `${enrollmentFailurePrefix(context)} section "${sectionName}" was not created because no active user is available to own the section.`,
     };
   }
 
@@ -134,7 +135,20 @@ export function importUsersFromRows(params: {
 
   const seenEmails = new Set<string>();
 
-  for (const row of params.rows) {
+  const importRoleOrder: Record<Role, number> = {
+    TEACHER: 0,
+    STUDENT: 1,
+    ADMIN: 2,
+  };
+
+  const orderedRows = [...params.rows].sort((left, right) => {
+    const leftRole = normalizeImportRole(left.userTypeRaw) ?? "ADMIN";
+    const rightRole = normalizeImportRole(right.userTypeRaw) ?? "ADMIN";
+    const orderDiff = importRoleOrder[leftRole] - importRoleOrder[rightRole];
+    return orderDiff !== 0 ? orderDiff : left.rowNumber - right.rowNumber;
+  });
+
+  for (const row of orderedRows) {
     const emailNormalized = row.email.trim().toLowerCase();
     const fullName = row.fullName.trim();
 

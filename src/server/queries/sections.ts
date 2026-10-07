@@ -1193,8 +1193,11 @@ function defaultImportSchoolYear() {
   return String(new Date().getFullYear());
 }
 
-/** First active teacher in the system, used when import creates a section before any teacher row exists. */
-export function findDefaultSectionOwnerTeacherId(preferredTeacherId?: string) {
+/**
+ * Owner for auto-created import sections.
+ * Prefers the teacher on the row, then any active teacher, then the importing admin/user.
+ */
+export function findDefaultSectionOwnerTeacherId(preferredTeacherId?: string, fallbackUserId?: string) {
   if (preferredTeacherId) {
     const preferred = getUserById(preferredTeacherId);
     if (preferred?.role === "TEACHER" && preferred.isActive) {
@@ -1213,7 +1216,18 @@ export function findDefaultSectionOwnerTeacherId(preferredTeacherId?: string) {
     )
     .get();
 
-  return row?.id ?? null;
+  if (row?.id) {
+    return row.id;
+  }
+
+  if (fallbackUserId) {
+    const fallback = getUserById(fallbackUserId);
+    if (fallback?.isActive) {
+      return fallbackUserId;
+    }
+  }
+
+  return null;
 }
 
 export function getOrCreateActiveSectionForImport(params: {
